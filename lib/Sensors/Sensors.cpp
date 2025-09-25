@@ -18,12 +18,56 @@ void Sensors::getMeasurements () {
     this->currIMUMeas = getIMUMeas(now);
     this->currMagMeas = getMagMeas(now);
     this->currAltMeas = getAltMeas(now);
+    this->currGPSMeas = getGPSMeas(now);
 };
 
+void Sensors::printMeasurements() {
+    Serial.println("Printing All Measurements . . . ");
+    // Accelerometer
+    Serial.print("Accel (m/s^2): X=");
+    Serial.print(this->currIMUMeas[0], 6);
+    Serial.print(" Y=");
+    Serial.print(this->currIMUMeas[1], 6);
+    Serial.print(" Z=");
+    Serial.println(this->currIMUMeas[2], 6);
 
-void Sensors::checkoutSensors() {
+    // Gyroscope
+    Serial.print("Gyro (rad/s): X=");
+    Serial.print(this->currIMUMeas[3], 6);
+    Serial.print(" Y=");
+    Serial.print(this->currIMUMeas[4], 6);
+    Serial.print(" Z=");
+    Serial.println(this->currIMUMeas[5], 6);
+
+    // Magnetometer
+    Serial.print("Mag (G): X=");
+    Serial.print(this->currMagMeas[0], 6);
+    Serial.print(" Y=");
+    Serial.print(this->currMagMeas[1], 6);
+    Serial.print(" Z=");
+    Serial.println(this->currMagMeas[2], 6);
+
+    // Altimeter
+    Serial.print("Alt (m): Z=");
+    Serial.println(this->currAltMeas, 6);
+
+    // GPS 
+    Serial.print("GPS (m, m/s): N=");
+    Serial.print(this->currGPSMeas[0], 6);
+    Serial.print(" E=");
+    Serial.print(this->currGPSMeas[1], 6);
+    Serial.print(" Vn=");
+    Serial.print(this->currGPSMeas[2], 6);
+    Serial.print(" Ve=");
+    Serial.println(this->currGPSMeas[3], 6);
+    Serial.println("------------------------");
+
+
+};
+
+void Sensors::startUpSensors() {
     //Given default I2C address and I2C bus, check if initilized properly
-    if (!imu_.begin_I2C()) { 
+    if (!this->imu_.begin_I2C()) { 
         Serial.println("IMU not found at default address... double check wiring");
         while (1) { //Eventually replace with error
         delay(10); //Infinite loop catches IMU not initized 
@@ -32,7 +76,7 @@ void Sensors::checkoutSensors() {
         Serial.println("IMU Detected");
     }
 
-    if (!mag_.begin()) {
+    if (!this->mag_.begin()) {
         Serial.println("Magnetometer not found at default address... double check wiring");
         while (1) { //Eventually replace with error
         delay(10); //Infinite loop catches Magnetometer not initized 
@@ -41,7 +85,7 @@ void Sensors::checkoutSensors() {
         Serial.println("Magnetometer Detected");
     }
 
-    if (!alt_.begin_I2C()) {
+    if (!this->alt_.begin_I2C()) {
         Serial.println("Altimeter not found at default address... double check wiring");
         while (1) { //Eventually replace with error
         delay(10); //Infinite loop catches Magnetometer not initized 
@@ -51,11 +95,65 @@ void Sensors::checkoutSensors() {
     }
 
     // Checks for GPS Lock
-    this->gps_.begin(9600); //Initializes gps communication
-    char testGPS = this->gps_.read(); //Get a NMEA sentence
-    if (GPS.)
+    this->gps_.begin(9600); //Initializes gps communication on provided serial
 
-    Serial.println("Sensor checkout completed");
+    //Checks to see if we can read a message. This doesn't mean we have a fix
+    unsigned long timeout = 10 * this->seconds; //Will check gps for 5 seconds to see if we recieve a test message
+    unsigned long startGPSTest = micros();
+    bool gpsCheckoutBool = false;
+    Serial.println ("Checking for GPS Message . . .");
+    while (micros() - startGPSTest < timeout && !gpsCheckoutBool) { //Checks for response without a fix
+        this->gps_.read(); // Get each char from buffer until we have the full sentence
+
+        if (this->gps_.newNMEAreceived()) { //Tells you full sentence aquired
+            this->gps_.parse(this->gps_.lastNMEA()); //Parse through
+            Serial.println(this->gps_.lastNMEA());
+            gpsCheckoutBool = true;
+        }
+    }
+    if (gpsCheckoutBool) {
+        Serial.println("GPS Message Recieved");
+    } else {
+        Serial.println("GPS Not Detected, double check wiring");
+        while (1) { //Eventually replace with error
+            delay(10); //Infinite loop catches Magnetometer not initized 
+        };
+    }
+
+    Serial.println("Sensor Start-Up completed");
+    
+
+}
+
+void Sensors :: setUpSensors(std::array<double,3> magHardIron, std::array<double,9> magSoftIron, 
+                            std::array<double,9> rotIMU2Body, std::array<double,9> rotMag2Body) {
+
+    // ---Set up IMU ----
+    Serial.println("Setting up IMU");
+    this->setIMUDataRange(icm20649_accel_range_t::ICM20649_ACCEL_RANGE_16_G, icm20649_gyro_range_t::ICM20649_GYRO_RANGE_2000_DPS);
+    this->setIMUUpdateRate(10); //102.3 Hz
+    this->rotIMU2Body_ = rotIMU2Body;
+  
+    // --- Set up Magnetometer  ---
+    Serial.println("Setting up Magnetometer");
+    this->setMagUpdateRate(lis2mdl_rate_t::LIS2MDL_RATE_50_HZ); 
+    this->setMagCalibration(magHardIron, magSoftIron);
+    this->rotMag2Body_ = rotMag2Body;
+    // --- Set up Altimeter ---
+    Serial.println("Setting up Altimeter");
+    this->setAltPressureOversampling(BMP3_OVERSAMPLING_8X); //Datasheet recommended for drones to oversample 8x
+    this->setAltUpdateRate(BMP3_ODR_50_HZ); //Datasheet recommended for drones to have ODR at 50Hz
+    this->setAltFilterCoefficent(BMP3_IIR_FILTER_COEFF_3); //Datasheet recommended for drones to have IIR filter bit be 2 (Coeff 3, see table 4.3.21)
+    
+    // --- Set up GPS ---
+    Serial.println("Setting up GPS");
+    this->setGPSNMEAFormat(PMTK_SET_NMEA_OUTPUT_RMCGGA); //Formats to output RMC (lat,long,SOG,COG) + GGA (Altitude, sat id, etc)
+    this->setGPSNMEAUpdateRate(PMTK_SET_NMEA_UPDATE_1HZ); //1 Hz
+    this->setGPSPositionUpdateRate(PMTK_API_SET_FIX_CTL_1HZ); //1Hz
+    this->setGPSBaudRate(PMTK_SET_BAUD_9600); //9600 Bits per second limit. Should match with above 
+}
+
+void Sensors::finalCheckOut() {
 
 }
 
@@ -87,9 +185,9 @@ void Sensors::calibrateSensors() {
     // Write header line to files
     imuCalFile.println("t,ax,ay,az,gx,gy,gz"); 
     altCalFile.println("t,h"); 
-    gpsCalFile.println("t,x,y,vx,vy"); 
+    gpsCalFile.println("t,lat,long,sog,cog"); 
 
-    int next_print = 0; // Keeps track of when to print out progress
+    unsigned long next_print = 0; // Keeps track of when to print out progress
     //Static calibrations (get offsets)
     Serial.println("Starting Static Calibrations ...");
     unsigned long static_calibration_start = micros();
@@ -108,10 +206,12 @@ void Sensors::calibrateSensors() {
     // ~ 60 GPS data
     std::array<double,6> imuMeas;
     double altMeas;
+    std::array<double,4> gpsMeas;
 
     while (time_in_static_calibration < 60 * this->seconds) {
         imuMeas = getIMUMeas(static_calibration_now);
         altMeas = getAltMeas(static_calibration_now);
+        gpsMeas = getGPSMeas(static_calibration_now);
         //This if statement is unncessary for IMU but keep here just in case
         if (!isnan(imuMeas[0])) { //Only need to check the first index since they should all be NaN
             imuMeasSum[0] += imuMeas[0];
@@ -145,6 +245,24 @@ void Sensors::calibrateSensors() {
             altCalFile.print(",");
             altCalFile.println(altMeasSum,6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
         }
+        if (!isnan(gpsMeas[0])) {
+            //Only need to sum up Lat/Long. We know speed is zero.
+            gpsMeasSum[0] += gpsMeas[0];
+            gpsMeasSum[1] += gpsMeas[1]; 
+            numGPSMeas += 1;
+
+            //Write to file
+            //Write to file
+            gpsCalFile.print(time_in_static_calibration);
+            gpsCalFile.print(",");
+            gpsCalFile.print(gpsMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+            gpsCalFile.print(",");
+            gpsCalFile.print(gpsMeas[1],6);
+            gpsCalFile.print(",");
+            gpsCalFile.print(gpsMeas[2],6); 
+            gpsCalFile.print(",");
+            gpsCalFile.println(gpsMeas[3],6); 
+        }
 
         //Run this at the fastest rate of sensors, so ~100Hz for IMU
         delayMicroseconds(this->freqIMU_);
@@ -153,17 +271,77 @@ void Sensors::calibrateSensors() {
 
         if (time_in_static_calibration >= next_print) {
             Serial.print("Static Calibration: ");
-            Serial.print(time_in_static_calibration / (10*this->seconds));
+            Serial.print(time_in_static_calibration / (this->seconds));
             Serial.print(" out of ");
             Serial.print(60);
             Serial.println(" seconds");
+            next_print += 10*this->seconds;
         }
     };
     imuCalFile.close(); //Close File
     altCalFile.close(); 
+    gpsCalFile.close(); 
     this -> setIMUCalibration(imuMeasSum, numIMUMeas);
     this -> setAltCalibration(altMeasSum, numAltMeas);
-    
+    this -> setGPSCalibration(gpsMeasSum, numGPSMeas);
+
+};
+
+bool Sensors::finalArmingCheck() {
+    bool calIMU = true;
+    bool calMag = true;
+    bool calGPS = true;
+
+    //Can make this more efficent, but focus on readability since this is during the setup loop
+    //------Check IMU--------
+    for (unsigned int i = 0; i<this->accelBias.size(); i++) {
+        if (isnan(this->accelBias[i]) || isnan(this->gyroBias[i])) {
+            calIMU = false;
+            break;
+        }
+    }
+
+    //------Check Magnetometer--------
+    for (unsigned int i = 0; i<this->magHardIron.size(); i++) {
+        if (isnan(this->magHardIron[i])) {
+            calMag = false;
+            break;
+        }
+    }
+    for (unsigned int i = 0; i<this->magSoftIron.size(); i++) {
+        if (isnan(this->magSoftIron[i])) {
+            calMag = false;
+            break;
+        }
+    }
+
+    //------Check GPS / Altimeter--------
+    for (unsigned int i = 0; i<this->referenceECEFPosition.size(); i++) { 
+        //If this is not nan, that means we successfully set the refence altitude along with lat/long, so no need for seperate altimeter check
+        if (isnan(this->referenceECEFPosition[i])) { 
+            calGPS = false;
+            break;
+        }
+    }
+
+    for (unsigned int i = 0; i<this->ECEF2NED.size(); i++) { 
+        if (isnan(this->ECEF2NED[i])) { 
+            calGPS = false;
+            break;
+        }
+    }
+
+    //Only need to do the final checkout if we calibrated the sensors correctly. 
+    if (calIMU && calMag && calGPS) {
+        this->finalCheckOut();
+        this -> calibratedSensors = true; //Set flag to true, ready to use calibrated measurements from sensors
+
+        //If we got past checkoutSensors without triggering a while loop, we have successfully calibrated and checked all sensors
+        return true;
+    } else {
+        return false;
+    }
+
 };
 
 
@@ -218,12 +396,21 @@ std::array<double,6> Sensors::getIMUMeas(unsigned long now) {
         sensors_event_t imu_a, imu_g, imu_temp; //Don't do anything with temp yet
         imu_.getEvent(&imu_a, &imu_g, &imu_temp);
 
-        IMUMeas[0] = imu_a.acceleration.x - this->accelBias[0];
-        IMUMeas[1] = imu_a.acceleration.y - this->accelBias[1];
-        IMUMeas[2] = imu_a.acceleration.z - this->accelBias[2];
-        IMUMeas[3] = imu_g.gyro.x - this->gyroBias[0];
-        IMUMeas[4] = imu_g.gyro.y - this->gyroBias[1];
-        IMUMeas[5] = imu_g.gyro.z - this->gyroBias[2];
+        IMUMeas[0] = imu_a.acceleration.x;
+        IMUMeas[1] = imu_a.acceleration.y;
+        IMUMeas[2] = imu_a.acceleration.z;
+        IMUMeas[3] = imu_g.gyro.x;
+        IMUMeas[4] = imu_g.gyro.y;
+        IMUMeas[5] = imu_g.gyro.z;
+
+        if (this->calibratedSensors) {
+            IMUMeas[0] -=  this->accelBias[0];
+            IMUMeas[1] -=  this->accelBias[1];
+            IMUMeas[2] -=  this->accelBias[2];
+            IMUMeas[3] -= this->gyroBias[0];
+            IMUMeas[4] -= this->gyroBias[1];
+            IMUMeas[5] -= this->gyroBias[2];
+        }
 
         this->lastIMU_ = now;
     } else {
@@ -313,8 +500,11 @@ std::array<double,3> Sensors::getMagMeas(unsigned long now) {
         magMeas[1] = mag_m.magnetic.y;
         magMeas[2] = mag_m.magnetic.z;
 
-        // Apply Soft/Hard Iron Calibration!
-        // Initialize with 0 bias and identity, since calibration happens first.
+
+        if (this->calibratedSensors) {
+            // Apply Soft/Hard Iron Calibration!
+            // Initialize with 0 bias and identity, since calibration happens first.
+        }
 
         this -> lastMag_ = now;
     } else {
@@ -379,4 +569,117 @@ void Sensors::setGPSPositionUpdateRate(const char* gpsPositionUpdateRate) {
 
 void Sensors::setGPSBaudRate(const char* gpsBaudRate) {
     this->gps_.sendCommand(gpsBaudRate);
+};
+
+std::array<double,3> Sensors::LLA2ECEF(double latitude, double longitude, double altitude) {
+    double sinLat = sin(latitude * this->deg2rad);
+    double cosLong = cos(longitude * this->deg2rad);
+    double sinLong = sin(longitude * this->deg2rad);
+    //Radius of curvature in the prime vertical, N= a/sqrt(1-e^2*sin(lat)^2)
+    double N = this->WGS84_a / sqrt(1-this->WGS84_e2 * sinLat*sinLat); 
+
+    double x = (N + altitude) * cosLong;
+    double z = (N * (1-this->WGS84_e2) + altitude) * sinLong;
+
+    return std::array<double,3> {x * cosLong, x * sinLong, z};
+};
+
+std::array<double,3> Sensors::LLA2NED(double latitude, double longitude, double altitude) {
+    // Get ECEF position
+    std::array<double,3> r_ECEF = this->LLA2ECEF(latitude, longitude, altitude);
+
+    // Get Delta ECEF
+    std::array<double,3> del_r_ECEF{r_ECEF[0] - this->referenceECEFPosition[0],
+                                    r_ECEF[1] - this->referenceECEFPosition[1],
+                                    r_ECEF[2] - this->referenceECEFPosition[2]};
+
+    //Rotate into NED, will replace this with RotationMatrix
+    std::array<double,3> NED {this->ECEF2NED[0] * del_r_ECEF[0] + this->ECEF2NED[1] * del_r_ECEF[1] + this->ECEF2NED[2] * del_r_ECEF[2],
+                              this->ECEF2NED[3] * del_r_ECEF[0] + this->ECEF2NED[4] * del_r_ECEF[1] + this->ECEF2NED[5] * del_r_ECEF[2],
+                              this->ECEF2NED[6] * del_r_ECEF[0] + this->ECEF2NED[7] * del_r_ECEF[1] + this->ECEF2NED[9] * del_r_ECEF[2]};
+    
+    return NED;
+};
+
+void Sensors::setGPSCalibration(std::array<double,2>& gpsDataSum, int numGPSMeas) {
+    //Set ref Lat/Long
+    this->referenceLatitude = gpsDataSum[0] / numGPSMeas;
+    this->referenceLongitude = gpsDataSum[1] / numGPSMeas;
+
+    //Set ref ECEF Position
+    this->referenceECEFPosition = this->LLA2ECEF(this->referenceLatitude, this->referenceLongitude, this->referenceAltitude);
+
+    //Set ECEF2NED
+    //hardcode the formula R2(-pi/2)R2(-Lat)R3(Long) = R2(-Lat-pi/2)R3(Long) [Passive convention]
+    // Lat --> phi, Long --> theta
+    double sp = sin(this->referenceLatitude * this->deg2rad);
+    double cp = cos(this->referenceLatitude * this->deg2rad);
+    double st = sin(this->referenceLongitude * this->deg2rad);
+    double ct= cos(this->referenceLongitude * this->deg2rad);
+    this->ECEF2NED = {-sp * ct, -sp*st, cp,
+                      -st,      ct,     0,
+                      -cp*ct,   -cp*st, -sp};
+
+    Serial.print("GPS Calibrated Successfully with ");
+    Serial.print(numGPSMeas);
+    Serial.println(" data.");
+    Serial.println("Reference ECEF Position : ");
+    Serial.print("X : ");
+    Serial.print(this->referenceECEFPosition[0]); 
+    Serial.println(" m");
+    Serial.print("Y : ");
+    Serial.print(this->referenceECEFPosition[1]); 
+    Serial.println(" m");
+    Serial.print("Z : ");
+    Serial.print(this->referenceECEFPosition[2]); 
+    Serial.println(" m");
+    Serial.print("Reference Latitude : ");
+    Serial.print(this->referenceLatitude);
+    Serial.println(" deg");
+    Serial.print("Reference Longitude : ");
+    Serial.print(this->referenceLongitude);
+    Serial.println(" deg");
+
+}
+
+
+std::array<double,4> Sensors::getGPSMeas(unsigned long now) {
+    std::array<double,4> gpsMeas;
+    if (now - this -> lastGPS_ >= this -> freqGPS_) {
+        
+
+        while(this -> gps_.read()); //Reads from serial buffer until there is no characters left, returns 0 when all characters read
+
+        // Check for sentence
+        if (this-> gps_.newNMEAreceived()) {
+            this->gps_.parse(this->gps_.lastNMEA());
+        } else {
+            //No new message, don't update lastGPS_ and re-check next cycle.
+            gpsMeas = {NAN, NAN, NAN,NAN};
+            return gpsMeas;
+        }
+
+        double v_N = this->gps_.speed * cos(this->gps_.angle * this->deg2rad);
+        double v_E = this->gps_.speed * sin(this->gps_.angle * this->deg2rad);
+
+        //Check which type of measurement we want to return.
+        if (this->calibratedSensors) {
+            std::array<double,3> gpsNED = this->LLA2NED(this-> gps_.latitudeDegrees, 
+                                                        this-> gps_.longitudeDegrees,
+                                                        this-> gps_.altitude);
+            // Only return NE position and velocity for Kalman filter
+            gpsMeas = {gpsNED[0], gpsNED[1], v_N,v_E};
+        } else {
+            //If not calibrated, we are in the process of calibrating so return the lattitude and longitude.
+            // Will take altitude from altimeter which is more accurate. 
+            // Don't need velocity for calibration.
+            gpsMeas = {this-> gps_.latitudeDegrees, this-> gps_.longitudeDegrees, v_N,v_E};
+        }
+
+        this -> lastGPS_ = now;
+        
+    } else {
+        gpsMeas = {NAN, NAN, NAN, NAN};
+    };
+    return gpsMeas;
 };
