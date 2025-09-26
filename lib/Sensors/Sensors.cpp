@@ -147,7 +147,7 @@ void Sensors :: setUpSensors(std::array<double,3> magHardIron, std::array<double
     
     // --- Set up GPS ---
     Serial.println("Setting up GPS");
-    this->setGPSNMEAFormat(PMTK_SET_NMEA_OUTPUT_RMCGGA); //Formats to output RMC (lat,long,SOG,COG) + GGA (Altitude, sat id, etc)
+    this->setGPSNMEAFormat(PMTK_SET_NMEA_OUTPUT_RMCGGA); //Formats to output RMC (lat,long,SOG,COG) + GGA (Altitude, sat id, etc). Options found in Adafruit_PMTK.h
     this->setGPSNMEAUpdateRate(PMTK_SET_NMEA_UPDATE_1HZ); //1 Hz
     this->setGPSPositionUpdateRate(PMTK_API_SET_FIX_CTL_1HZ); //1Hz
     this->setGPSBaudRate(PMTK_SET_BAUD_9600); //9600 Bits per second limit. Should match with above 
@@ -573,13 +573,14 @@ void Sensors::setGPSBaudRate(const char* gpsBaudRate) {
 
 std::array<double,3> Sensors::LLA2ECEF(double latitude, double longitude, double altitude) {
     double sinLat = sin(latitude * this->deg2rad);
+    double cosLat = cos(latitude * this->deg2rad);
     double cosLong = cos(longitude * this->deg2rad);
     double sinLong = sin(longitude * this->deg2rad);
     //Radius of curvature in the prime vertical, N= a/sqrt(1-e^2*sin(lat)^2)
     double N = this->WGS84_a / sqrt(1-this->WGS84_e2 * sinLat*sinLat); 
 
-    double x = (N + altitude) * cosLong;
-    double z = (N * (1-this->WGS84_e2) + altitude) * sinLong;
+    double x = (N + altitude) * cosLat;
+    double z = (N * (1-this->WGS84_e2) + altitude) * sinLat;
 
     return std::array<double,3> {x * cosLong, x * sinLong, z};
 };
@@ -596,7 +597,7 @@ std::array<double,3> Sensors::LLA2NED(double latitude, double longitude, double 
     //Rotate into NED, will replace this with RotationMatrix
     std::array<double,3> NED {this->ECEF2NED[0] * del_r_ECEF[0] + this->ECEF2NED[1] * del_r_ECEF[1] + this->ECEF2NED[2] * del_r_ECEF[2],
                               this->ECEF2NED[3] * del_r_ECEF[0] + this->ECEF2NED[4] * del_r_ECEF[1] + this->ECEF2NED[5] * del_r_ECEF[2],
-                              this->ECEF2NED[6] * del_r_ECEF[0] + this->ECEF2NED[7] * del_r_ECEF[1] + this->ECEF2NED[9] * del_r_ECEF[2]};
+                              this->ECEF2NED[6] * del_r_ECEF[0] + this->ECEF2NED[7] * del_r_ECEF[1] + this->ECEF2NED[8] * del_r_ECEF[2]};
     
     return NED;
 };
@@ -664,7 +665,7 @@ std::array<double,4> Sensors::getGPSMeas(unsigned long now) {
 
         //Check which type of measurement we want to return.
         if (this->calibratedSensors) {
-            std::array<double,3> gpsNED = this->LLA2NED(this-> gps_.latitudeDegrees, 
+            std::array<double,3> gpsNED = this->LLA2NED(this-> gps_.latitudeDegrees,  //Note that adafruit handles N/S and E/W by returning +/-
                                                         this-> gps_.longitudeDegrees,
                                                         this-> gps_.altitude);
             // Only return NE position and velocity for Kalman filter
