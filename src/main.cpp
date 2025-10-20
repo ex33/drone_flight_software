@@ -3,7 +3,7 @@
 #include <Wire.h> //Communicate w/ I2C devices
 #include <SD.h> //SD card
 //===== User / Custom =====
-#include "Mathpk.h"
+#include <Mathpk.h>
 #include "FSM.h"
 #include "Sensors.h"
 
@@ -19,14 +19,15 @@ FSM finiteStateMachine;
 FSM::State currentState;
 
 //Init sensors
-double imuFrequency {100}; //Hz
-double magFrequency {50}; //Hz
-double altFrequency {50}; //Hz
-double gpsFrequency {1}; //Hz
-std::array<double,3> magHardIron{0.0, 0.0, 0.0};
-std::array<double,9> magSoftIron{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-std::array<double,9> rotIMU2Body{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-std::array<double,9> rotMag2Body{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+float imuFrequency {100}; //Hz
+float magFrequency {50}; //Hz
+float altFrequency {50}; //Hz
+float gpsFrequency {1}; //Hz
+Vector3f magHardIron(0.0, 0.0, 0.0);
+Rotation magSoftIron(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
+Rotation rotIMU2Body(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
+Rotation rotMag2Body(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
+Rotation rotMag2TrueNED(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0);
 Sensors sensors(imuFrequency, magFrequency, altFrequency, gpsFrequency, Serial6); //GPS connected to port 6
 bool calibrateMag = true;
 
@@ -52,20 +53,22 @@ void setup() {
 
   // ------------- Sensor Checkout and Setup -----------------
   sensors.startUpSensors();
-  sensors.setUpSensors(magHardIron, magSoftIron, rotIMU2Body, rotMag2Body); //Also sets up frequencies of sensors / ODR [HARDCODED]
+  sensors.setUpSensors(magHardIron, magSoftIron,rotMag2TrueNED, rotIMU2Body, rotMag2Body); //Also sets up frequencies of sensors / ODR [HARDCODED]
 
   // --- Calibrate Sensors ---
   delay(100); //Delay a few milliseconds after sensor start-up. IMU has wonky first reading
   //sensors.calibrateMagnetometer();
   //Need a GPS LOCK to do the calibration for it..
+  
   sensors.calibrateSensors(); // Get IMU Bias, checks GPS lock
 
   //Test sensor measurements
-  
-
-  sensors.getMeasurements();
+  sensors.updateMeasurements();
   sensors.printMeasurements();
 
+  //Get the Bias as part of the initial state for the filter
+  Vector3f startUpBiasAccel = sensors.getAccelBias();
+  Vector3f startUpBiasGyro = sensors.getGyroBias();
 
   Serial.println("Done Test, Forever looping...");
   while (1) { //Eventually replace with error
