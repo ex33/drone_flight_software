@@ -3,6 +3,8 @@
 #ifndef _SENSORS_H
 #define _SENSORS_H
 
+
+
 #include <SD.h>
 
 //===== Adafruit =====
@@ -17,20 +19,23 @@
 // GPS
 #include <Adafruit_GPS.h>
 
+#include <Mathpk.h>
+#include <Constants.h>
 
 class Sensors {
 public:
-    // Conversions
-    static constexpr double deg2rad = PI/180;
+    // // Conversions
+    // static constexpr float deg2rad = PI/180;
 
-    // Time constants
-    static const unsigned long seconds = 1000000UL;
-    // GPS Constants
-    static constexpr double WGS84_a = 6378137; // m, semi-major axis of ellpsiod
-    static constexpr double WGS84_e2 = 0.006694379990140; // n.d., eccentricity^2 of ellipsoid
-    // Altimeter Constants
-    static constexpr double seaLevelPressure = 1013.25; //Hardcode this for altimeter [hPa]
-
+    // // Time constants
+    // static const unsigned long seconds = 1000000UL;
+    // // GPS Constants
+    // static constexpr float WGS84_a = 6378137; // m, semi-major axis of ellpsiod
+    // static constexpr float WGS84_e2 = 0.006694379990140; // n.d., eccentricity^2 of ellipsoid
+    // // Altimeter Constants
+    // static constexpr float seaLevelPressure = 1013.25; //Hardcode this for altimeter [hPa]
+    // // IMU Constants
+    // static constexpr float g0 = 9.80665; //m/s^2
     enum class SensorErrors{
         InitError
     };
@@ -49,16 +54,24 @@ public:
      * there is a measurement. If there is a mismatch between this value and the actual output rate, 
      * there may be the risk of returning the same measurement due to the pin not being updated.
      */
-    Sensors(double freqIMU, double freqMag, double freqAlt, double freqGPS, HardwareSerial &serialGPS); 
+    Sensors(float freqIMU, float freqMag, float freqAlt, float freqGPS, HardwareSerial &serialGPS); 
 
     // -------------------------- All Sensors Functions ------------------------------
     /**
-    * @brief Updates ALL sensor readings at the current time.
+    * @brief Updates ALL RAW measurements at the current time.
     * 
     * Goes through each sensor and calls their respective getMeas functions.
     * Updates members that contains the current measurements for the sensors.
     */
-    void getMeasurements();
+    void updateMeasurements();
+
+    /**
+    * @brief Return ALL sensor readings at the current time for NAV Filter.
+    * 
+    * Need to call updateMeasurements before this to ensure all measurements are up to date.
+    * Will perform any calibration and rotations needed here before giving this to the NAV Filter. 
+    */
+    std::array<float,14> getMeasurements();
 
     /**
     * @brief Print ALL sensor readings at the current time.
@@ -82,8 +95,8 @@ public:
     * Set all starting rates, operational modes, etc.
     * Hardcode all sensor orientations and parameters for now. 
      */
-    void setUpSensors(std::array<double,3> magHardIron, std::array<double,9> magSoftIron, 
-                            std::array<double,9> rotIMU2Body, std::array<double,9> rotMag2Body);
+    void setUpSensors(Vector3f magHardIron, Rotation magSoftIron, Rotation magNED2TrueNED,
+                            Rotation rotBody2IMU, Rotation rotBody2Mag);
 
     /**
     * @brief Final Checkup on Health of sensors
@@ -137,7 +150,21 @@ public:
     * 
     * Collect X number of IMU data and sum them up. Average to get the bias.
      */
-    void setIMUCalibration(std::array<double,6>& imuDataSum, int numIMUMeas);
+    void setIMUCalibration(std::array<float,6>& imuDataSum, int numIMUMeas);
+
+    /**
+    * @brief Returns Calibrated Start-up bias for the accelerometer 
+    * 
+    * @return Accelerometer Bias in Body frame
+    */
+    Vector3f getAccelBias();
+
+    /**
+    * @brief Returns Calibrated Start-up bias for the gyro
+    * 
+    * @return Gyro Bias in Body frame
+    */
+    Vector3f getGyroBias();
 
     /**
     * @brief Returns accelerometer/gyroscope measurement if the time since the last reading is greater 
@@ -148,7 +175,7 @@ public:
     * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
     * Else, assume register has the same value and return NaN array
     */
-    std::array<double,6> getIMUMeas(unsigned long now);
+    std::array<float,6> getIMUMeas(unsigned long now);
 
     // -------------------------- Magnetometer Functions ------------------------------
     /**
@@ -171,7 +198,7 @@ public:
     * Formula: mag_cal = S (mag_uncal - b)
     * Where S is the 3x3 soft iron calibration matrix and b is the 3x1 hard iron calibration vector
      */
-    void setMagCalibration(std::array<double,3>& hardIronCalibration, std::array<double,9> & softIronCalibration);
+    void setMagCalibration(Vector3f& hardIronCalibration, Rotation & softIronCalibration);
 
     /**
     * @brief Collect data for Magnetometer Calibration
@@ -191,7 +218,7 @@ public:
     * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
     * Else, assume register has the same value and return NaN array
      */
-    std::array<double,3> getMagMeas(unsigned long now);
+    std::array<float,3> getMagMeas(unsigned long now);
 
     // -------------------------- Altimeter Functions ------------------------------
     /**
@@ -244,7 +271,7 @@ public:
     * 
     * Collect X number of Altimeter data and sum them up. Average to get the bias.
      */
-    void setAltCalibration(double altDataSum, int numAltMeas);
+    void setAltCalibration(float altDataSum, int numAltMeas);
 
     /**
     * @brief Returns altimeter measurement if the time since the last reading is greater 
@@ -255,7 +282,7 @@ public:
     * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
     * Else, assume register has the same value and return NaN array
      */
-    double getAltMeas(unsigned long now);
+    float getAltMeas(unsigned long now);
 
     // -------------------------- GPS Functions ------------------------------
     /**
@@ -305,7 +332,7 @@ public:
     * @param longitude Longitude from GPS in Degrees
     * @param altitude Height from Mean Sea Level in meters
     * 
-    * @return ECEF Position vector
+    * @return ECEF Position vector. Using double for full precision for large rECEF values
     */
     std::array<double,3> LLA2ECEF(double latitude, double longitude, double altitude);
 
@@ -317,10 +344,10 @@ public:
     * @param longitude Longitude from GPS in Degrees
     * @param altitude Height from Mean Sea Level in meters
     * 
-    * @return NED Position Vector
+    * @return NED Position Vector. Using double for full precision for large rECEF values
     * ONLY USE THIS WHEN CALIBRATED SENSORS AND HAVE A REFERENCE ECEF POSITION AND ECEF2NED MATRIX
     */
-    std::array<double,3> LLA2NED(double latitude, double longitude, double altitude);
+    Vector3f LLA2NED(double latitude, double longitude, double altitude);
 
     /**
     * @brief Sets the reference Lattitude and Longitude. Using reference altitude, find reference ECEF position
@@ -343,26 +370,29 @@ public:
     * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
     * Else, assume register has the same value and return NaN array
      */
-    std::array<double,4> getGPSMeas(unsigned long now);
+    std::array<double,5> getGPSMeas(unsigned long now);
 
 
 private:
+    //---------- Initialization ------------
     //Adafruit sensors
     Adafruit_ICM20649 imu_;
     Adafruit_LIS2MDL mag_;
     Adafruit_BMP3XX alt_;
     Adafruit_GPS gps_; 
 
-
     //Frequencies (micro-seconds)
-    double freqIMU_; 
-    double freqMag_;
-    double freqAlt_;
-    double freqGPS_;
+    float freqIMU_; 
+    float freqMag_;
+    float freqAlt_;
+    float freqGPS_;
 
     //Rotations
-    std::array<double,9> rotIMU2Body_;
-    std::array<double,9> rotMag2Body_;
+    Rotation rotBody2IMU_;
+    Rotation rotBody2Mag_;
+    Vector3f magHardIron_ {NAN,NAN,NAN}; 
+    Rotation magSoftIron_ = std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; 
+    Rotation magNE2TrueNE_ =std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; //Adjusts for inclination and declination
 
     //Time since last measurements ( Initialize w/ zero so start with a reading )
     unsigned long lastIMU_ = 0; 
@@ -370,31 +400,31 @@ private:
     unsigned long lastAlt_ = 0;
     unsigned long lastGPS_ = 0;
 
-    //Sensor calibrations (Init w/ NAN so final check can just be isNaN)
-    std::array<double,3> accelBias {NAN,NAN,NAN};
-    std::array<double,3> gyroBias {NAN,NAN,NAN};
-    std::array<double,3> magHardIron {NAN,NAN,NAN}; 
-    std::array<double,9> magSoftIron {NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; //Replace with rotation matrix class
-    std::array<double,3> referenceECEFPosition {NAN,NAN,NAN}; 
-    std::array<double,9> ECEF2NED {NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; //Replace with rotation matrix class
+    //------------ Calibrated ----------------
+    // Return for NAV Init
+    Vector3f startUpAccelBiasBody_ {NAN,NAN,NAN}; 
+    Vector3f startUpGyroBiasBody_ {NAN,NAN,NAN}; 
+
+    // GPS Stuff
+    std::array<double,3> referenceECEFPosition_ {NAN,NAN,NAN}; //Double to handle large value
+    Rotation ECEF2NED_ = std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; //Replace with rotation matrix class
+    double referenceAltitude_ {NAN}; //From Alitmeter calibration
+    double referenceLatitude_ {NAN}; //From GPS Calibration
+    double referenceLongitude_ {NAN}; //From GPS Calibration
 
     //Bools / Flags
-    bool startUpBool = false;
+    bool startUpBool_ = false;
     
-    bool calibratedSensors = false; //Once calibrated, use calibrated parameters
-    bool gpsFix = false; 
+    bool calibratedSensors_ = false; //Once calibrated, use calibrated parameters
+    bool gpsFix_ = false; 
 
- 
+    //------------- Current Measurements ----------------
     //Used to get referenceECEFPosition, but not used afterwards.
-    double referenceAltitude {NAN}; //From Alitmeter calibration
-    double referenceLatitude {NAN}; //From GPS Calibration
-    double referenceLongitude {NAN}; //From GPS Calibration
-
     //Store measurements from sensors, will always be overwritten.
-    std::array<double,6> currIMUMeas; // m/s^2 and rad/s
-    std::array<double,3> currMagMeas; // Unitless / Guass
-    double currAltMeas; // m
-    std::array<double,4> currGPSMeas; //m, m/s
+    std::array<float,6> currIMUMeas_; // m/s^2 and rad/s
+    std::array<float,3> currMagMeas_; // Unitless / Guass
+    float currAltMeas_; // m
+    std::array<double,5> currGPSMeas_; //m, m/s
 
 
 
