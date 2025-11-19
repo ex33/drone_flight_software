@@ -2,7 +2,7 @@
 #define _CONSTANTS_H
 
 
-namespace Constants{
+namespace CONSTANTS{
 // Conversions
 inline constexpr float deg2rad = 0.0174532925199433f; // pi/180
 

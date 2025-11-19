@@ -24,18 +24,7 @@
 
 class Sensors {
 public:
-    // // Conversions
-    // static constexpr float deg2rad = PI/180;
 
-    // // Time constants
-    // static const unsigned long seconds = 1000000UL;
-    // // GPS Constants
-    // static constexpr float WGS84_a = 6378137; // m, semi-major axis of ellpsiod
-    // static constexpr float WGS84_e2 = 0.006694379990140; // n.d., eccentricity^2 of ellipsoid
-    // // Altimeter Constants
-    // static constexpr float seaLevelPressure = 1013.25; //Hardcode this for altimeter [hPa]
-    // // IMU Constants
-    // static constexpr float g0 = 9.80665; //m/s^2
     enum class SensorErrors{
         InitError
     };

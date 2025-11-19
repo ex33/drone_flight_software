@@ -87,10 +87,10 @@ void SETUP_Test_Sensors_Motors() {
     delay(10); //Infinite loop catches IMU not initized 
   };
 
-  motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPulseWidth, SETP::maxPulseWidth);
-  motor2CW.attach(SETUP::esc2SignalPin, SETUP::minPulseWidth, SETP::maxPulseWidth);
-  motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPulseWidth, SETP::maxPulseWidth);
-  motor4CW.attach(SETUP::esc4SignalPin, SETUP::minPulseWidth, SETP::maxPulseWidth);
+  motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
+  motor2CCW.attach(SETUP::esc2SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
+  motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
+  motor4CCW.attach(SETUP::esc4SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
 
 };
 

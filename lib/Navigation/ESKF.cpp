@@ -85,7 +85,7 @@ void ESKF::initQd(float dt) {
 Matrix18f ESKF::getSTM(const Quaternion& q, const Vector3f& accelBias,  const Vector3f& gyroBias, const Vector3f& accelMeas, const Vector3f& gyroMeas, const float dt ) const{
     //0. Get all necessary variables
     //a. Get the total acceleration in the BODY FRAME. Can probabaly reformulate this to be in the inertial frame and skip the rotation.
-    Vector3f aB = (accelMeas - accelBias) + (q2R(q) * Vector3f(0.0f,0.0f, Constants::g0)); 
+    Vector3f aB = (accelMeas - accelBias) + (q2R(q) * Vector3f(0.0f,0.0f, CONSTANTS::g0)); 
     Vector3f wB = gyroMeas - gyroBias;
     //b. Unpack variables 
     float qw = q.w();
@@ -211,7 +211,7 @@ void ESKF::step(std::array<float,14> z) {
     Vector3f tiltMeas (NAN, NAN, NAN);
 
     //Decide if we have low enough acceleration to use the accelerometer as a tilt sensor
-    if (std::fabs( (accelMeas-this->ba_k).getMag() - Constants::g0)<0.5) { //Raw Accelerometer measurement should be measuring -g in NED / body frame if we don't have acceleration. Threshold is only twice that of the noise ceiling. May need a low pas filter 
+    if (std::fabs( (accelMeas-this->ba_k).getMag() - CONSTANTS::g0)<0.5) { //Raw Accelerometer measurement should be measuring -g in NED / body frame if we don't have acceleration. Threshold is only twice that of the noise ceiling. May need a low pas filter 
         tiltMeas = (accelMeas-this->ba_k).normalize();
     }
 
@@ -243,7 +243,7 @@ void ESKF::predict(const Vector3f& accelMeas, const Vector3f& gyroMeas) {
     this->propagateCovariance(q_temp, ba_temp, bg_temp, accelMeas, gyroMeas, dt_temp); 
 
     //2. Propagate Nominal State forward in time using IMU measurements (NO UPDATES TO BIAS)
-    Vector3f estAccelMeas = q2R(q_temp).transpose() * (accelMeas - ba_temp) + Vector3f(0.0f,0.0f,Constants::g0); // Rotate Accelerometer reading into Inertial frame, add back in Inertial gravity in NED to get Coordinate acceleration
+    Vector3f estAccelMeas = q2R(q_temp).transpose() * (accelMeas - ba_temp) + Vector3f(0.0f,0.0f,CONSTANTS::g0); // Rotate Accelerometer reading into Inertial frame, add back in Inertial gravity in NED to get Coordinate acceleration
     Vector3f estGyroMeas = gyroMeas - bg_temp; // This is w_est
 
     this->p_k += (v_temp*dt_temp) + (0.5f * estAccelMeas) * (dt_temp*dt_temp); //pk = pk + vk*dt * 0.5* (ak) *dt^2     

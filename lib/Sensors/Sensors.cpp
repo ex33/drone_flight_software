@@ -4,10 +4,10 @@ Sensors::Sensors(float freqIMU, float freqMag, float freqAlt, float freqGPS, Har
 gps_(&serialGPS) //Initializer list, initializes at same time as sensor object
 {
     // Convert from Hz to Micro-seconds2micro
-    freqIMU_ = Constants::seconds2micro/freqIMU; 
-    freqMag_ = Constants::seconds2micro/freqMag;
-    freqAlt_ = Constants::seconds2micro/freqMag;
-    freqGPS_ = Constants::seconds2micro/freqGPS;
+    freqIMU_ = CONSTANTS::seconds2micro/freqIMU; 
+    freqMag_ = CONSTANTS::seconds2micro/freqMag;
+    freqAlt_ = CONSTANTS::seconds2micro/freqMag;
+    freqGPS_ = CONSTANTS::seconds2micro/freqGPS;
 };
 // -------------------------- All Sensors Functions ------------------------------
 void Sensors::updateMeasurements () {
@@ -56,8 +56,8 @@ std::array<float,14> Sensors::getMeasurements() {
     // Get the GPS Measurements
     // Raw measurements has Lat, Long, Speed, Angle
     if (!isnan(this->currGPSMeas_[0])) {
-        float v_N = this->currGPSMeas_[2] * cos(this->currGPSMeas_[3] * Constants::deg2rad);
-        float v_E = this->currGPSMeas_[2] * sin(this->currGPSMeas_[3] * Constants::deg2rad);
+        float v_N = this->currGPSMeas_[2] * cos(this->currGPSMeas_[3] * CONSTANTS::deg2rad);
+        float v_E = this->currGPSMeas_[2] * sin(this->currGPSMeas_[3] * CONSTANTS::deg2rad);
         Vector3f gpsNEDPos;
         if (!isnan(this->currAltMeas_)) {
             gpsNEDPos = this->LLA2NED(this-> currGPSMeas_[0],  //Note that adafruit handles N/S and E/W by returning +/-
@@ -159,7 +159,7 @@ void Sensors::startUpSensors() {
     this->gps_.begin(9600); //Initializes gps communication on provided serial
 
     //Checks to see if we can read a message. This doesn't mean we have a fix
-    unsigned long timeout = 10 * Constants::seconds2micro; //Will check gps for 5 seconds2micro to see if we recieve a test message
+    unsigned long timeout = 10 * CONSTANTS::seconds2micro; //Will check gps for 5 seconds2micro to see if we recieve a test message
     unsigned long startGPSTest = micros();
     bool gpsCheckoutBool = false;
     Serial.println ("Checking for GPS Message . . .");
@@ -276,7 +276,7 @@ void Sensors::calibrateSensors() {
     float altMeas;
     std::array<double,5> gpsMeas;
 
-    while (time_in_static_calibration < 60 * Constants::seconds2micro) {
+    while (time_in_static_calibration < 60 * CONSTANTS::seconds2micro) {
         imuMeas = getIMUMeas(static_calibration_now);
         altMeas = getAltMeas(static_calibration_now);
         gpsMeas = getGPSMeas(static_calibration_now);
@@ -339,11 +339,11 @@ void Sensors::calibrateSensors() {
 
         if (time_in_static_calibration >= next_print) {
             Serial.print("Static Calibration: ");
-            Serial.print(time_in_static_calibration / (Constants::seconds2micro));
+            Serial.print(time_in_static_calibration / (CONSTANTS::seconds2micro));
             Serial.print(" out of ");
             Serial.print(60);
             Serial.println(" seconds2micro");
-            next_print += 10*Constants::seconds2micro;
+            next_print += 10*CONSTANTS::seconds2micro;
         }
     };
     imuCalFile.close(); //Close File
@@ -430,7 +430,7 @@ void Sensors::setIMUUpdateRate(unsigned int imuRateDivisor) {
 
 void Sensors::setIMUCalibration(std::array<float,6>& imuData, int numIMUMeas) {
     //Get IMU Bias
-    Vector3f startUpAccelBiasSensor (imuData[0]/numIMUMeas,imuData[1]/numIMUMeas,imuData[2]/numIMUMeas - Constants::g0); //Offset by gravity for z
+    Vector3f startUpAccelBiasSensor (imuData[0]/numIMUMeas,imuData[1]/numIMUMeas,imuData[2]/numIMUMeas - CONSTANTS::g0); //Offset by gravity for z
     Vector3f startUpGyroBiasSensor (imuData[3]/numIMUMeas,imuData[4]/numIMUMeas,imuData[5]/numIMUMeas);
 
     //Rotate into Body frame
@@ -524,7 +524,7 @@ void Sensors::calibrateMagnetometer() {
     Serial.println("Starting Dynamic Calibrations ...");
     unsigned long time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
     unsigned long next_print = 0; // Keeps track of when to print out progress
-    while (time_in_dynamic_calibration < 60 * Constants::seconds2micro) {
+    while (time_in_dynamic_calibration < 60 * CONSTANTS::seconds2micro) {
 
         std::array<float,3> magMeas = this->getMagMeas(dynamic_calibration_now);
 
@@ -548,11 +548,11 @@ void Sensors::calibrateMagnetometer() {
         time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
         if (time_in_dynamic_calibration >= next_print) {
             Serial.print("Dynamic Calibration: ");
-            Serial.print(time_in_dynamic_calibration / Constants::seconds2micro);
+            Serial.print(time_in_dynamic_calibration / CONSTANTS::seconds2micro);
             Serial.print(" out of ");
             Serial.print(60);
             Serial.println(" seconds2micro");
-            next_print += 10*Constants::seconds2micro;
+            next_print += 10*CONSTANTS::seconds2micro;
         }
     };
     magCalFile.close(); //Close File
@@ -613,7 +613,7 @@ float Sensors::getAltMeas(unsigned long now) {
     if (now - this -> lastAlt_ >= this -> freqAlt_) {
 
         //Get Altimeter Reading
-        AltMeas = this->alt_.readAltitude(Constants::seaLevelPressure);
+        AltMeas = this->alt_.readAltitude(CONSTANTS::seaLevelPressure);
         this -> lastAlt_ = now;
     } else {
         AltMeas =  NAN;
@@ -644,10 +644,10 @@ std::array<double,3> Sensors::LLA2ECEF(double latitude, double longitude, double
     double cosLong = cos(longitude * PI/180.0);
     double sinLong = sin(longitude * PI/180.0);
     //Radius of curvature in the prime vertical, N= a/sqrt(1-e^2*sin(lat)^2)
-    double N = Constants::WGS84_a / sqrt(1-Constants::WGS84_e2 * sinLat*sinLat); 
+    double N = CONSTANTS::WGS84_a / sqrt(1-CONSTANTS::WGS84_e2 * sinLat*sinLat); 
 
     double x = (N + altitude) * cosLat;
-    double z = (N * (1-Constants::WGS84_e2) + altitude) * sinLat;
+    double z = (N * (1-CONSTANTS::WGS84_e2) + altitude) * sinLat;
 
     return std::array<double,3>{x * cosLong, x * sinLong, z};
 };
@@ -679,10 +679,10 @@ void Sensors::setGPSCalibration(std::array<double,2>& gpsDataSum, int numGPSMeas
     //hardcode the formula R2(-pi/2)R2(-Lat)R3(Long) = R2(-Lat-pi/2)R3(Long) [Passive convention]
     // Lat --> phi, Long --> theta
     //Don't need high precision for rotation so can use float here.
-    float sp = sin(this->referenceLatitude_ * Constants::deg2rad);
-    float cp = cos(this->referenceLatitude_ * Constants::deg2rad);
-    float st = sin(this->referenceLongitude_ * Constants::deg2rad);
-    float ct= cos(this->referenceLongitude_ * Constants::deg2rad);
+    float sp = sin(this->referenceLatitude_ * CONSTANTS::deg2rad);
+    float cp = cos(this->referenceLatitude_ * CONSTANTS::deg2rad);
+    float st = sin(this->referenceLongitude_ * CONSTANTS::deg2rad);
+    float ct= cos(this->referenceLongitude_ * CONSTANTS::deg2rad);
     this->ECEF2NED_ = Rotation(std::array<float,9> {-sp * ct, -sp*st, cp,
                                                     -st,      ct,     0,
                                                     -cp*ct,   -cp*st, -sp});

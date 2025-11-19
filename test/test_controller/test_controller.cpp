@@ -18,7 +18,7 @@ Vector3f rateRef(0.0f, 0.0f, 0.0f);
 float kT = 1.0f;
 float m = 0.5f; 
 
-float u = m*Constants::g0 / (4*kT);
+float u = m*CONSTANTS::g0 / (4*kT);
 std::array<float,4> nominalControl {u,u,u,u};
 
 // Gain Matrix.
