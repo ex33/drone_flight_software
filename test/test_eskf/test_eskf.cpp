@@ -100,7 +100,7 @@ inline bool compare_matrix(const Matrix18f& TruthMatrix, const Matrix18f& TestMa
   msg[0] = '\0'; //Clear previous msg
 
   for (unsigned int i = 0; i<324; i++ ){
-    if (fabs(TruthMatrix[i] - TestMatrix[i]) > 1e-6f) {
+    if (fabs(TruthMatrix[i] - TestMatrix[i]) > tol) {
         snprintf(msg, 100, 
                   "Matrix mismatch at index %u: expected %.9f, got %.9f", 
                   i, TruthMatrix[i], TestMatrix[i]);
