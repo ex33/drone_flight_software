@@ -165,7 +165,6 @@ void Sensors::startUpSensors() {
     Serial.println ("Checking for GPS Message . . .");
     while (micros() - startGPSTest < timeout && !gpsCheckoutBool) { //Checks for response without a fix
         this->gps_.read(); // Get each char from buffer until we have the full sentence
-
         if (this->gps_.newNMEAreceived()) { //Tells you full sentence aquired
             this->gps_.parse(this->gps_.lastNMEA()); //Parse through
             Serial.println(this->gps_.lastNMEA());
@@ -175,7 +174,7 @@ void Sensors::startUpSensors() {
     if (gpsCheckoutBool) {
         Serial.println("GPS Message Recieved");
     } else {
-        Serial.println("GPS Not Detected, float check wiring");
+        Serial.println("GPS Not Detected, check wiring");
         while (1) { //Eventually replace with error
             delay(10); //Infinite loop catches Magnetometer not initized 
         };
@@ -186,8 +185,15 @@ void Sensors::startUpSensors() {
 
 }
 
-void Sensors :: setUpSensors(Vector3f magHardIron, Rotation magSoftIron, Rotation magNE2TrueNE,
-                            Rotation rotBody2IMU, Rotation rotBody2Mag) {
+void Sensors :: setUpSensors(std::array<float,3> magHardIronArray, std::array<float,9> magSoftIronArray, std::array<float,9> magNE2TrueNEArray,
+                            std::array<float,9> rotBody2IMUArray, std::array<float,9> rotBody2MagArray) {
+
+    // Convert into Vector and Rotations
+    Vector3f magHardIron (magHardIronArray);
+    Rotation magSoftIron (magSoftIronArray);
+    Rotation magNE2TrueNE (magNE2TrueNEArray);
+    Rotation rotBody2IMU (rotBody2IMUArray);
+    Rotation rotBody2Mag (rotBody2MagArray);
 
     // ---Set up IMU ----
     Serial.println("Setting up IMU");

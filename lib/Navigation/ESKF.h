@@ -35,9 +35,10 @@ public:
      * @param sig_gps_vel 1-sigma Noise from GPS Sensor (Velocity) [MEASUREMENT NOISE ]
      *
      * Initializes Filter
+     * Expect array inputs so they can be inside SetUp.h as const expr
      */
-    ESKF(Vector3f p0, Vector3f v0, Quaternion q0, Vector3f ba0, Vector3f bg0, Vector3f bm0,     //Initial Nominal States
-        Matrix18f P0,                                                              //Error State Covariance
+    ESKF(std::array<float,3> p0, std::array<float,3> v0, std::array<float,4> q0, std::array<float,3> ba0, std::array<float,3> bg0, std::array<float,3> bm0,     //Initial Nominal States
+        std::array<float,324> P0,                                                                   //Error State Covariance
         float dt,                                                                              // Filter Timestep
         float sig_acc, float sig_gyro, float eta_acc, float eta_gyro, float eta_mag,       //Process Noise
         float sig_m, float sig_tilt, float sig_alt, float sig_gps_pos, float sig_gps_vel); //Measurement Noise
@@ -67,15 +68,26 @@ public:
     /**
      * @brief Propagates the covariance matrix forward
      * 
+     * @param q Current Estiamte of Quaternion
+     * @param accelBias Current Estimate of Accelerometer Bias in the body frame
+     * @param gyroBias Current Estimate of the Gyro Bias in the body frame
      * @param accelMeas Raw Accelerometer Reading
      * @param gyroMeas Raw Gyro Reading
+     * @param dt Step Size
      *
      * First order linearization of this via Taylor Expansion of Matrix Exponential. Other forms includes higher order expansions, or RK4
      * Since we already calculate the inertial acceleration prior to calling this during the predict step, just pass that in directly
      */
     void propagateCovariance(const Quaternion& q, const Vector3f& accelBias,  const Vector3f& gyroBias, const Vector3f& accelMeas, const Vector3f& gyroMeas, const float dt );
 
+    /**
+     * @brief Calls on propagateCovaraince along with propagating state estimate forward via Euler Integration
+     * 
 
+     * @param accelMeas Raw Accelerometer Reading
+     * @param gyroMeas Raw Gyro Reading
+     *
+     */
     void predict(const Vector3f& accelMeas, const Vector3f& gyroMeas);
 
 
@@ -236,8 +248,17 @@ public:
 
     };
 
-    void step(std::array<float,14> z);
 
+    /**
+     * @brief Runs 1 Loop of the filter (Propagate + Update)
+     * 
+
+     * @param z Proceesed Sensor Measurements (Accelerometer, Gyro, Magnetometer, Altimeter, GPS). 
+     *
+     * Note: Tile Handed in update()
+     */
+    void step(std::array<float,14> z);
+    
     
     // Getter functions. More for regression testing
     inline Vector3f getPosition() const {

@@ -1,8 +1,8 @@
 #include "ESKF.h"
 
 
-ESKF::ESKF(Vector3f p0, Vector3f v0, Quaternion q0, Vector3f ba0, Vector3f bg0, Vector3f bm0,     //Initial Nominal States
-            Matrix18f P0,                                                              //Error State Covariance
+ESKF::ESKF(std::array<float,3> p0, std::array<float,3> v0, std::array<float,4> q0, std::array<float,3> ba0, std::array<float,3> bg0, std::array<float,3> bm0,     //Initial Nominal States
+            std::array<float,324> P0,                                                              //Error State Covariance
             float dt,
             float sig_acc, float sig_gyro, float eta_acc, float eta_gyro, float eta_mag,       //Process Noise
             float sig_m, float sig_tilt, float sig_alt, float sig_gps_pos, float sig_gps_vel):

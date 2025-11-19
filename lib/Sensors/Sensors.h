@@ -93,10 +93,10 @@ public:
     * @brief Start up all sensors to their desired operational modes
     * 
     * Set all starting rates, operational modes, etc.
-    * Hardcode all sensor orientations and parameters for now. 
+    * Expect array inputs so they can be inside SetUp.h as const expr
      */
-    void setUpSensors(Vector3f magHardIron, Rotation magSoftIron, Rotation magNED2TrueNED,
-                            Rotation rotBody2IMU, Rotation rotBody2Mag);
+    void setUpSensors(std::array<float,3> magHardIronArray, std::array<float,9> magSoftIronArray, std::array<float,9> magNE2TrueNEArray,
+                            std::array<float,9> rotBody2IMUArray, std::array<float,9> rotBody2MagArray);
 
     /**
     * @brief Final Checkup on Health of sensors
