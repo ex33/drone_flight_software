@@ -5,7 +5,7 @@
 #include <Arduino.h> //Platformio doesn't insert this at compile time like Ardiuno does
 #include <Servo.h>
 namespace SETUP {
-//---------- Vehicle Parameters --------------
+// ========================= Vehicle Parameters =========================
 
 // Motor Parameters
 inline constexpr float kM = 1.0f; 
@@ -14,7 +14,7 @@ inline constexpr float kT = 1.0f;
 //Physical parameters
 inline constexpr float L = 0.75f; // Pitch / Roll Moment arm
 
-// ------- Sensors --------
+// ========================= Sensors =========================
 
 // Sensor polling frequencies
 inline constexpr float imuFrequency {100}; //Hz
@@ -32,7 +32,7 @@ inline constexpr std::array<float,9> rotMag2TrueNED{1.0, 0.0, 0.0, 0.0, 1.0, 0.0
 // GPS Wiring
 HardwareSerial& gpsSerial = Serial8; // GPS Connected to Tx/Rx 8 UART
 
-//Init Navigation
+//========================= Navigation =========================
 inline constexpr std::array<float,3> p0 {0.0f,0.0f,0.0f};
 inline constexpr std::array<float,3> v0 {0.0f,0.0f,0.0f};
 inline constexpr std::array<float,4> q0 {1.0f,0.0f,0.0f,0.0f};
@@ -77,14 +77,18 @@ inline constexpr float sig_gps_pos(5.0f);
 inline constexpr float sig_gps_vel(0.1f);
 
 
-// Motors
-inline constexpr int esc1SignalPin = 37;
-inline constexpr int esc2SignalPin = 28;
-inline constexpr int esc3SignalPin = 36;
-inline constexpr int esc4SignalPin = 29;
+// ========================= Motors =========================
+// Pins are 28 29 37 36 (top to bottom), left to right
+inline constexpr int esc1SignalPin = 28;
+inline constexpr int esc2SignalPin = 37;
+inline constexpr int esc3SignalPin = 29;
+inline constexpr int esc4SignalPin = 36;
 
-inline constexpr int maxPulseWidth = 2000;
-inline constexpr int minPulseWidth = 1000;
-
+inline constexpr int maxPWM = 2000;
+inline constexpr int minPWM = 1000;
+inline constexpr int M1StartPWM = 1050; 
+inline constexpr int M2StartPWM = 1150; 
+inline constexpr int M3StartPWM = 1150; 
+inline constexpr int M4StartPWM = 1150; 
 }
 #endif

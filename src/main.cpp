@@ -1,3 +1,5 @@
+//pio run -t upload
+//pio device monitor --baud 115200
 //===== Ardiuno / Standard =====
 #include <Arduino.h> //Platformio doesn't insert this at compile time like Ardiuno does
 #include <Wire.h> //Communicate w/ I2C devices
@@ -9,12 +11,10 @@
 #include "Sensors.h"
 #include "ESKF.h"
 #include "Setup.h"
-//pio run -t upload
-//pio device monitor --baud 115200
-//Init Sensors
 
 #define SD_CS BUILTIN_SDCARD  // Teensy 4.1 internal SD slot
 
+// ============================ Set up Containers for Global Variables ============================
 //Init Flags (eventually, will switch this to states/ modes so that it can check the state.)
 FSM finiteStateMachine;
 FSM::State currentState;
@@ -32,7 +32,7 @@ Servo motor2CCW;
 Servo motor3CW; 
 Servo motor4CCW; 
 
-
+// ============================ Shortcuts for various Setups [START] ============================
 // Subroutines to run during void setup. Actual setup further down
 void SETUP_Off_Board_Calibration() {
   Serial.begin(115200); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
@@ -58,6 +58,232 @@ void SETUP_Off_Board_Calibration() {
   sensors.startUpSensors();
   sensors.setUpSensors(SETUP::magHardIron, SETUP::magSoftIron,SETUP::rotMag2TrueNED, SETUP::rotIMU2Body, SETUP::rotMag2Body); //Also sets up frequencies of sensors / ODR [HARDCODED]
 }
+
+void SETUP_Calibrate_Motors() {
+  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  while (!Serial) {
+    //Do nothing until serial monitor is opened
+  };
+  motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor2CCW.attach(SETUP::esc2SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor4CCW.attach(SETUP::esc4SignalPin, SETUP::minPWM, SETUP::maxPWM);
+
+  // For calibration, start motor HIGH, then low. This is opposite of flight commands which must start LOW
+
+  // Calibrate Motor 1 
+  Serial.println("Starting Motor 1 High");
+  motor1CW.writeMicroseconds(SETUP::maxPWM); // Maximum throttle
+  delay(5000); //Hold max for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 1 Low");
+  motor1CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(5000); //Hold min for 5 seconds Until Beeps 
+
+  // Calibrate Motor 2
+  Serial.println("Starting Motor 2 High");
+  motor2CCW.writeMicroseconds(SETUP::maxPWM); // Maximum throttle
+  delay(5000); ///Hold max for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 2 Low");
+  motor2CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(5000); //Hold min for 5 seconds Until One long beep
+
+  // // Calibrate Motor 3 
+  Serial.println("Starting Motor 3 High");
+  motor3CW.writeMicroseconds(SETUP::maxPWM); // Maximum throttle
+  delay(5000); //Hold max for 5 seconds
+  Serial.println("Starting Motor 3 Low");
+  motor3CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(5000); //Hold max for 5 seconds
+
+  // // Calibrate Motor 4 
+  Serial.println("Starting Motor 4 High");
+  motor4CCW.writeMicroseconds(SETUP::maxPWM); // Maximum throttle
+  delay(5000); //Hold max for 3 seconds
+  Serial.println("Starting Motor 4 Low");
+  motor4CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(5000); //Hold max for 5 seconds
+
+}
+
+void SETUP_Find_Motors_Start() {
+  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  while (!Serial) {
+    //Do nothing until serial monitor is opened
+  };
+  motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor2CCW.attach(SETUP::esc2SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor4CCW.attach(SETUP::esc4SignalPin, SETUP::minPWM, SETUP::maxPWM);
+
+
+  // Spin each motor slowly to observe Spin Direction. 
+  // REMEMBER SPIN DIRECTION IN REFERENCE TO DOWN AXIS
+  // SO IF VIEWING FROM TOP, CW --> CCW and CCW --> CW
+
+  //Find the off-set needed after calibration
+  Serial.println("Starting Motor 1 Low");
+  motor1CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 1 1025");
+  motor1CW.writeMicroseconds(1025); 
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 1 1050");
+  motor1CW.writeMicroseconds(1050); 
+  delay(2000); 
+  Serial.println("Starting Motor 1 1075");
+  motor1CW.writeMicroseconds(1075); 
+  delay(2000); 
+  Serial.println("Starting Motor 1 1100");
+  motor1CW.writeMicroseconds(1100); 
+  delay(2000); 
+  Serial.println("Starting Motor 1 1125");
+  motor1CW.writeMicroseconds(1125); 
+  delay(2000); 
+  Serial.println("Starting Motor 1 1150");
+  motor1CW.writeMicroseconds(1150); 
+  delay(2000); 
+  Serial.println("Starting Motor 1 Low");
+  motor1CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+
+  // Find the off-set needed after calibration
+  Serial.println("Starting Motor 2 Low");
+  motor2CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 2 1025");
+  motor2CCW.writeMicroseconds(1025); 
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 2 1050");
+  motor2CCW.writeMicroseconds(1050); 
+  delay(2000); 
+  Serial.println("Starting Motor 2 1075");
+  motor2CCW.writeMicroseconds(1075); 
+  delay(2000); 
+  Serial.println("Starting Motor 23 1100");
+  motor2CCW.writeMicroseconds(1100); 
+  delay(2000); 
+  Serial.println("Starting Motor 2 1125");
+  motor2CCW.writeMicroseconds(1125); 
+  delay(2000); 
+  Serial.println("Starting Motor 2 1150");
+  motor2CCW.writeMicroseconds(1150); 
+  delay(2000); 
+  Serial.println("Starting Motor 2 Low");
+  motor2CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps   
+
+  // Find the off-set needed after calibration
+  Serial.println("Starting Motor 3 Low");
+  motor3CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 3 1025");
+  motor3CW.writeMicroseconds(1025); 
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 3 1050");
+  motor3CW.writeMicroseconds(1050); 
+  delay(2000); 
+  Serial.println("Starting Motor 3 1075");
+  motor3CW.writeMicroseconds(1075); 
+  delay(2000); 
+  Serial.println("Starting Motor 3 1100");
+  motor3CW.writeMicroseconds(1100); 
+  delay(2000); 
+  Serial.println("Starting Motor 3 1125");
+  motor3CW.writeMicroseconds(1125); 
+  delay(2000); 
+  Serial.println("Starting Motor 3 1150");
+  motor3CW.writeMicroseconds(1150); 
+  delay(2000); 
+  Serial.println("Starting Motor 3 Low");
+  motor3CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps   
+
+  Serial.println("Starting Motor 4 Low");
+  motor4CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 4 1025");
+  motor4CCW.writeMicroseconds(1025); 
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 4 1050");
+  motor4CCW.writeMicroseconds(1050); 
+  delay(2000); 
+  Serial.println("Starting Motor 4 1075");
+  motor4CCW.writeMicroseconds(1075); 
+  delay(2000); 
+  Serial.println("Starting Motor 4 1100");
+  motor4CCW.writeMicroseconds(1100); 
+  delay(2000); 
+  Serial.println("Starting Motor 4 1125");
+  motor4CCW.writeMicroseconds(1125); 
+  delay(2000); 
+  Serial.println("Starting Motor 4 1150");
+  motor4CCW.writeMicroseconds(1150); 
+  delay(2000); 
+  Serial.println("Starting Motor 4 Low");
+  motor4CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps   
+}
+
+void SETUP_Find_Motor_Directions() {
+  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  while (!Serial) {
+    //Do nothing until serial monitor is opened
+  };
+  motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor2CCW.attach(SETUP::esc2SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor4CCW.attach(SETUP::esc4SignalPin, SETUP::minPWM, SETUP::maxPWM);
+
+
+  // Spin each motor slowly to observe Spin Direction. 
+  // REMEMBER SPIN DIRECTION IN REFERENCE TO DOWN AXIS
+  // SO IF VIEWING FROM TOP, CW --> CCW and CCW --> CW
+
+  // Observe the Spin Direction of motors and make sure they are right
+  Serial.println("Starting Motor 1 Low");
+  motor1CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 1 Minimum PWM");
+  motor1CW.writeMicroseconds(SETUP::M1StartPWM);
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 1 Low");
+  motor1CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+
+  // Find the off-set needed after calibration
+  Serial.println("Starting Motor 2 Low");
+  motor2CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(5000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 2 1025");
+  motor2CCW.writeMicroseconds(SETUP::M2StartPWM); 
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 2 Low");
+  motor2CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps   
+
+  // Find the off-set needed after calibration
+  Serial.println("Starting Motor 3 Low");
+  motor3CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(5000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 3 Start PWM");
+  motor3CW.writeMicroseconds(SETUP::M3StartPWM); 
+  delay(2000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 3 Low");
+  motor3CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps   
+
+  Serial.println("Starting Motor 4 Low");
+  motor4CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(5000); //Hold min for 5 seconds Until Beeps 
+  Serial.println("Starting Motor 4 Start PWM");
+  motor4CCW.writeMicroseconds(SETUP::M4StartPWM); 
+  delay(2000); 
+  Serial.println("Starting Motor 4 Low");
+  motor4CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
+  delay(2000); //Hold min for 5 seconds Until Beeps   
+}
+
+
 
 // Run to just check out all Sensors and make sure motors are connected properly
 void SETUP_Test_Sensors_Motors() {
@@ -87,10 +313,10 @@ void SETUP_Test_Sensors_Motors() {
     delay(10); //Infinite loop catches IMU not initized 
   };
 
-  motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
-  motor2CCW.attach(SETUP::esc2SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
-  motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
-  motor4CCW.attach(SETUP::esc4SignalPin, SETUP::minPulseWidth, SETUP::maxPulseWidth);
+  motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor2CCW.attach(SETUP::esc2SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPWM, SETUP::maxPWM);
+  motor4CCW.attach(SETUP::esc4SignalPin, SETUP::minPWM, SETUP::maxPWM);
 
 };
 
@@ -141,55 +367,23 @@ void SETUP_Preflight_Check() {
   Vector3f startUpBiasGyro = sensors.getGyroBias();
 }
 
+// ============================ [END] ============================
 
 
 
-
-
+// ============================ Actual Setup and Loop Calls ============================
 void setup() {
-  Serial.begin(115200); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
-  while (!Serial) {
-    //Do nothing until serial monitor is opened
-  };
-  SETUP_Test_Sensors_Motors();
+  //SETUP_Test_Sensors_Motors();
+  //SETUP_Calibrate_Motors();
+  //SETUP_Find_Motors_Start();
+  SETUP_Find_Motor_Directions();
 
-  // // Set up Motor
-  //   esc1.attach(esc1Pin, 1000, 2000);
-  //   esc1.writeMicroseconds(1000); // Minimum throttle
-  //   delay(3000); // Wait to arm
-
-
-  // Arming Check
-  // Within here, should check that all calibration went okay, i.e. we have values for biases, references, etc for sensors
-  //Check if navigation has initial states.
-  // Each class should have a bool that can quickly be reference that we are ready to start. sensors will be calibratebool
 }
 
 void loop() {
-  // // Slowly ramp up to spin
-  // for (int us = 1000; us <= 1500; us += 10) {
-  //   esc1.writeMicroseconds(us);
-  //   delay(50);
-  // }
-  // delay(2000);
-
-  // // Slowly ramp down
-  // for (int us = 1500; us >= 1000; us -= 10) {
-  //   esc1.writeMicroseconds(us);
-  //   delay(50);
-  // }
-  // delay(2000);
-  // Check Which State 
-  //finiteStateMachine.update(sensors);
-  //currentState = finiteStateMachine.getState();
 
   // Sensors 
   //z = run_sensors(curentState, imu);
-
-
-  // Initialize Adafruit sensors_event_t (common struct between data from sensors)
-  // Re-initialize to ensure nothing is left over from previous loop
-  //sensors_event_t imu_a, imu_g, imu_temp;
 
   // // Check/Switch States
 
