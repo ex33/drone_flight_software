@@ -18,7 +18,9 @@ void Sensors::updateMeasurements () {
     this->currIMUMeas_ = getIMUMeas(now);
     this->currMagMeas_ = getMagMeas(now);
     this->currAltMeas_ = getAltMeas(now);
-    this->currGPSMeas_ = getGPSMeas(now);
+    if (this->gpsFix_ && this->gpsFlag_){ //If we have a gps fix AND are running the GPS
+        this->currGPSMeas_ = getGPSMeas(now);
+    }
 };
 
 std::array<float,14> Sensors::getMeasurements() {
@@ -32,6 +34,7 @@ std::array<float,14> Sensors::getMeasurements() {
     Vector3f accelBody;
     Vector3f gyroBody;
     Vector3f magBody;
+    float altHeight;
     std::array<float,4> gpsNEPosVel; //Only need the NE position and velocity
 
     // Update all sensors
@@ -41,6 +44,7 @@ std::array<float,14> Sensors::getMeasurements() {
     if (!isnan(this->currIMUMeas_[0])) {
         accelBody = this->rotBody2IMU_.transpose() * Vector3f(this->currIMUMeas_[0],this->currIMUMeas_[1],this->currIMUMeas_[2]);
         gyroBody = this->rotBody2IMU_.transpose() * Vector3f(this->currIMUMeas_[3],this->currIMUMeas_[4],this->currIMUMeas_[5]);
+
     } else {
         accelBody = Vector3f(NAN, NAN, NAN); // Save on computation if there is no measurement
         gyroBody = Vector3f(NAN, NAN, NAN); // Save on computation if there is no measurement
@@ -49,10 +53,33 @@ std::array<float,14> Sensors::getMeasurements() {
     // Get Magnetometer Reading
     //Apply Soft and Hard Iron calibration, and Rotate into body frame and adjusts for declination and inclination
     if (!isnan(this->currMagMeas_[0])) {
-        magBody =  this->magNE2TrueNE_  * this ->rotBody2Mag_.transpose() * ( this->magSoftIron_*( Vector3f(this->currMagMeas_) - this->magHardIron_ ) );
+        magBody = this->rotBody2Mag_.transpose() * this->magSoftIron_*(Vector3f(this->currMagMeas_) - this->magHardIron_); // Raw measurement
+
+        // Normalization Handled in ESKF
     } else {
         magBody = Vector3f(NAN, NAN, NAN);
     }
+
+    if (!isnan(this->currAltMeas_)) {
+        //altBody = -(this->currAltMeas_ - this->referenceAltitude_); //Negative for DOwn
+        
+        // // If our current Altimeter Measurement is within the expected absolute error for the pressure measurement, then update it
+        // // Causes an issue where if we are hovering within this region, it'll try to adjust for that hover state. Should pass in a flag here for when we are idling (i.e. on the ground, vs in mission mode)
+        // if (fabs(this->currAltMeas_-this->referencePressure_)<0.5) { //Absolute pressure up to 0.5 hPA
+
+        //     this->referencePressure_ = (0.995) * this->referencePressure_ + 0.005 * this->currAltMeas_;
+        // }
+
+        altHeight = 44330 * (1- pow(this->currAltMeas_/this->referencePressure_,0.1903));
+
+        // Gate it to account for difference in reference Pressure at the start. If we are getting negative values, we are basically at rest
+        if (altHeight < 0) {
+            altHeight = 0; 
+        }
+    } else {
+        altHeight = NAN;
+    }
+
     // Get the GPS Measurements
     // Raw measurements has Lat, Long, Speed, Angle
     if (!isnan(this->currGPSMeas_[0])) {
@@ -76,7 +103,7 @@ std::array<float,14> Sensors::getMeasurements() {
     z = {accelBody[0], accelBody[1], accelBody[2],
         gyroBody[0], gyroBody[1], gyroBody[2],
         magBody[0], magBody[1], magBody[2],
-        -this->currAltMeas_,  //Negative for Navigation Frame
+        altHeight,  
         gpsNEPosVel[0],gpsNEPosVel[1],gpsNEPosVel[2],gpsNEPosVel[3]};
 
     return z;
@@ -155,29 +182,32 @@ void Sensors::startUpSensors() {
         Serial.println("Altimeter Detected");
     }
 
+    //UNBLOCK FOR GPS
     // Checks for GPS Lock
-    this->gps_.begin(9600); //Initializes gps communication on provided serial
+    // Check if we are running GPS
+    if (this->gpsFlag_) {
+        this->gps_.begin(9600); //Initializes gps communication on provided serial
 
-    //Checks to see if we can read a message. This doesn't mean we have a fix
-    unsigned long timeout = 10 * CONSTANTS::seconds2micro; //Will check gps for 5 seconds2micro to see if we recieve a test message
-    unsigned long startGPSTest = micros();
-    bool gpsCheckoutBool = false;
-    Serial.println ("Checking for GPS Message . . .");
-    while (micros() - startGPSTest < timeout && !gpsCheckoutBool) { //Checks for response without a fix
-        this->gps_.read(); // Get each char from buffer until we have the full sentence
-        if (this->gps_.newNMEAreceived()) { //Tells you full sentence aquired
-            this->gps_.parse(this->gps_.lastNMEA()); //Parse through
-            Serial.println(this->gps_.lastNMEA());
-            gpsCheckoutBool = true;
+        //Checks to see if we can read a message. This doesn't mean we have a fix
+        unsigned long timeout = 10 * CONSTANTS::seconds2micro; //Will check gps for 5 seconds2micro to see if we recieve a test message
+        unsigned long startGPSTest = micros();
+        bool gpsCheckoutBool = false;
+        Serial.println ("Checking for GPS Message . . .");
+        while (micros() - startGPSTest < timeout && !gpsCheckoutBool) { //Checks for response without a fix
+            this->gps_.read(); // Get each char from buffer until we have the full sentence
+            if (this->gps_.newNMEAreceived()) { //Tells you full sentence aquired
+                this->gps_.parse(this->gps_.lastNMEA()); //Parse through
+                Serial.println(this->gps_.lastNMEA());
+                gpsCheckoutBool = true;
+            }
         }
-    }
-    if (gpsCheckoutBool) {
-        Serial.println("GPS Message Recieved");
-    } else {
-        Serial.println("GPS Not Detected, check wiring");
-        while (1) { //Eventually replace with error
-            delay(10); //Infinite loop catches Magnetometer not initized 
-        };
+        if (gpsCheckoutBool) {
+            Serial.println("GPS Message Recieved");
+        } else {
+            Serial.println("GPS Not Detected, check wiring");
+            Serial.println("Proceed without GPS");
+            this->gpsFlag_ = 0;
+        }
     }
 
     Serial.println("Sensor Start-Up completed");
@@ -185,13 +215,12 @@ void Sensors::startUpSensors() {
 
 }
 
-void Sensors :: setUpSensors(std::array<float,3> magHardIronArray, std::array<float,9> magSoftIronArray, std::array<float,9> magNE2TrueNEArray,
+void Sensors :: setUpSensors(std::array<float,3> magHardIronArray, std::array<float,9> magSoftIronArray,
                             std::array<float,9> rotBody2IMUArray, std::array<float,9> rotBody2MagArray) {
 
     // Convert into Vector and Rotations
     Vector3f magHardIron (magHardIronArray);
     Rotation magSoftIron (magSoftIronArray);
-    Rotation magNE2TrueNE (magNE2TrueNEArray);
     Rotation rotBody2IMU (rotBody2IMUArray);
     Rotation rotBody2Mag (rotBody2MagArray);
 
@@ -205,20 +234,25 @@ void Sensors :: setUpSensors(std::array<float,3> magHardIronArray, std::array<fl
     Serial.println("Setting up Magnetometer");
     this->setMagUpdateRate(lis2mdl_rate_t::LIS2MDL_RATE_50_HZ); 
     this->setMagCalibration(magHardIron, magSoftIron);
-    this->magNE2TrueNE_ = magNE2TrueNE;
     this->rotBody2Mag_ = rotBody2Mag;
     // --- Set up Altimeter ---
     Serial.println("Setting up Altimeter");
-    this->setAltPressureOversampling(BMP3_OVERSAMPLING_8X); //Datasheet recommended for drones to oversample 8x
-    this->setAltUpdateRate(BMP3_ODR_50_HZ); //Datasheet recommended for drones to have ODR at 50Hz
-    this->setAltFilterCoefficent(BMP3_IIR_FILTER_COEFF_3); //Datasheet recommended for drones to have IIR filter bit be 2 (Coeff 3, see table 4.3.21)
+    this->setAltPressureOversampling(BMP3_OVERSAMPLING_16X); //Datasheet recommended for drones to oversample 8x
+    this->setAltUpdateRate(BMP3_ODR_25_HZ); //Datasheet recommended for drones to have ODR at 50Hz
+    this->setAltFilterCoefficent(BMP3_IIR_FILTER_COEFF_15); //Datasheet recommended for drones to have IIR filter bit be 2 (Coeff 3, see table 4.3.21)
+    // For indoor application, there is a different set of recoomended:
+    // Oversampling to 16x
+    // ODR to 25 Hz
+    // IIR Fitler bit be 4 (Coeff 15)
     
     // --- Set up GPS ---
-    Serial.println("Setting up GPS");
-    this->setGPSNMEAFormat(PMTK_SET_NMEA_OUTPUT_RMCGGA); //Formats to output RMC (lat,long,SOG,COG) + GGA (Altitude, sat id, etc). Options found in Adafruit_PMTK.h
-    this->setGPSNMEAUpdateRate(PMTK_SET_NMEA_UPDATE_1HZ); //1 Hz
-    this->setGPSPositionUpdateRate(PMTK_API_SET_FIX_CTL_1HZ); //1Hz
-    this->setGPSBaudRate(PMTK_SET_BAUD_9600); //9600 Bits per second limit. Should match with above 
+    if (this->gpsFlag_) {
+        Serial.println("Setting up GPS");
+        this->setGPSNMEAFormat(PMTK_SET_NMEA_OUTPUT_RMCGGA); //Formats to output RMC (lat,long,SOG,COG) + GGA (Altitude, sat id, etc). Options found in Adafruit_PMTK.h
+        this->setGPSNMEAUpdateRate(PMTK_SET_NMEA_UPDATE_1HZ); //1 Hz
+        this->setGPSPositionUpdateRate(PMTK_API_SET_FIX_CTL_1HZ); //1Hz
+        this->setGPSBaudRate(PMTK_SET_BAUD_9600); //9600 Bits per second limit. Should match with above 
+    }
 }
 
 void Sensors::finalCheckOut() {
@@ -229,7 +263,21 @@ void Sensors::calibrateSensors() {
     // Use this to calibrate...
     // IMU --> Start up biases for accelerometer / gyro
     // Altimeter --> Starting altitude for reference
+    // Magnetometer --> Reference Vector for ESKF
     // GPS --> Starting Latitude and Longitude. 
+
+    if (SD.exists("imu_calibration.csv")) {
+        SD.remove("imu_calibration.csv");
+    }
+    if (SD.exists("mag_static_calibration.csv")) {
+        SD.remove("mag_static_calibration.csv");
+    }
+    if (SD.exists("alt_calibration.csv")) {
+        SD.remove("alt_calibration.csv");
+    }
+    if (SD.exists("gps_calibration.csv")) {
+        SD.remove("gps_calibration.csv");
+    }
 
     // Open .csv to save down IMU and Altimeter data
     File imuCalFile = SD.open("imu_calibration.csv", FILE_WRITE); //imu .csv
@@ -237,24 +285,32 @@ void Sensors::calibrateSensors() {
         Serial.println("Failed to open IMU Calibration file");
         return;
     }
+    imuCalFile.println("t,ax,ay,az,gx,gy,gz"); 
+
+    File magCalFile = SD.open("mag_static_calibration.csv", FILE_WRITE); //Altimeter .csv
+    if (!magCalFile) {
+        Serial.println("Failed to open Magnetometer Static Calibration file");
+        return;
+    }
+    magCalFile.println("t,mx, my, mz"); 
 
     File altCalFile = SD.open("alt_calibration.csv", FILE_WRITE); //Altimeter .csv
     if (!altCalFile) {
         Serial.println("Failed to open Altimeter Calibration file");
         return;
     }
+    altCalFile.println("t,h"); 
+
 
     File gpsCalFile = SD.open("gps_calibration.csv", FILE_WRITE); //GPS .csv
-    if (!altCalFile) {
+    if (!gpsCalFile) {
         Serial.println("Failed to open GPS Calibration file");
         return;
     }
-
-    // Write header line to files
-    imuCalFile.println("t,ax,ay,az,gx,gy,gz"); 
-    altCalFile.println("t,h"); 
     gpsCalFile.println("t,lat,long,sog,cog"); 
 
+
+    
     unsigned long next_print = 0; // Keeps track of when to print out progress
     //Static calibrations (get offsets)
     Serial.println("Starting Static Calibrations ...");
@@ -262,9 +318,11 @@ void Sensors::calibrateSensors() {
     unsigned long static_calibration_now = micros();
     unsigned long time_in_static_calibration = static_calibration_now - static_calibration_start;
     std::array<float,6> imuMeasSum {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // For IMU Bias
-    float altMeasSum {0.0}; // For reference Height
+    std::array<float,3> magMeasSum {0.0, 0.0, 0.0};
+    float altMeasSum = 0.0; // For reference Pressure
     std::array<double,2> gpsMeasSum {0.0, 0.0}; // For reference Lat/Long
     int numIMUMeas = 0; 
+    int numMagMeas = 0;
     int numAltMeas = 0;
     int numGPSMeas = 0;
 
@@ -273,13 +331,17 @@ void Sensors::calibrateSensors() {
     // ~ 3000 Altimeter data
     // ~ 60 GPS data
     std::array<float,6> imuMeas;
+    std::array<float,3> magMeas;
     float altMeas;
     std::array<double,5> gpsMeas;
 
-    while (time_in_static_calibration < 60 * CONSTANTS::seconds2micro) {
+    // Counter to keep track of how many altimeter measurements to ignore. 
+    int ignoreAltMeas = 0; 
+
+    while (time_in_static_calibration < 30 * CONSTANTS::seconds2micro) {
         imuMeas = getIMUMeas(static_calibration_now);
         altMeas = getAltMeas(static_calibration_now);
-        gpsMeas = getGPSMeas(static_calibration_now);
+        magMeas = getMagMeas(static_calibration_now);
         //This if statement is unncessary for IMU but keep here just in case
         if (!isnan(imuMeas[0])) { //Only need to check the first index since they should all be NaN
             imuMeasSum[0] += imuMeas[0];
@@ -304,32 +366,61 @@ void Sensors::calibrateSensors() {
             imuCalFile.print(",");
             imuCalFile.println(imuMeas[5],6); 
         }
-        if (!isnan(altMeas)) { 
-            altMeasSum += altMeas;
-            numAltMeas += 1;
 
+        // Unlike the other sensors, we MUST use soft/hard iron calibration for the Magnetometer prior to the static calibration step.
+        if (!isnan(magMeas[0])) {
+            // Make Measurement into a vector
+            Vector3f magMeasVector (magMeas);
+            magMeasVector = this->magSoftIron_ * (magMeasVector - this->magHardIron_);
+            magMeasSum[0] += magMeasVector[0];
+            magMeasSum[1] += magMeasVector[1];
+            magMeasSum[2] += magMeasVector[2];
+
+            numMagMeas += 1;
             //Write to file
-            altCalFile.print(time_in_static_calibration);
-            altCalFile.print(",");
-            altCalFile.println(altMeas,6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+            magCalFile.print(time_in_static_calibration);
+            magCalFile.print(",");
+            magCalFile.print(magMeasVector[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+            magCalFile.print(",");
+            magCalFile.print(magMeasVector[1],6);
+            magCalFile.print(",");
+            magCalFile.println(magMeasVector[2],6); 
         }
-        if (!isnan(gpsMeas[0])) {
-            //Only need to sum up Lat/Long. We know speed is zero, and we get altitude from altimeter.
-            gpsMeasSum[0] += gpsMeas[0];
-            gpsMeasSum[1] += gpsMeas[1]; 
-            numGPSMeas += 1;
 
-            //Write to file
-            //Write to file
-            gpsCalFile.print(time_in_static_calibration);
-            gpsCalFile.print(",");
-            gpsCalFile.print(gpsMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-            gpsCalFile.print(",");
-            gpsCalFile.print(gpsMeas[1],6);
-            gpsCalFile.print(",");
-            gpsCalFile.print(gpsMeas[2],6); 
-            gpsCalFile.print(",");
-            gpsCalFile.println(gpsMeas[3],6); 
+        if (!isnan(altMeas)) { 
+            if (ignoreAltMeas > 500) { //Ignore the first 500 altimeter measurement to let pressure / temperature stabilize
+                altMeasSum += altMeas;
+                numAltMeas ++ ;
+                //Write to file
+                altCalFile.print(time_in_static_calibration);
+                altCalFile.print(",");
+                altCalFile.println(altMeas,6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+            } else {
+                ignoreAltMeas++;
+            }
+            
+        }
+        
+        if (this->gpsFlag_) {
+            gpsMeas = getGPSMeas(static_calibration_now);
+            if (!isnan(gpsMeas[0])) {
+                //Only need to sum up Lat/Long. We know speed is zero, and we get altitude from altimeter.
+                gpsMeasSum[0] += gpsMeas[0];
+                gpsMeasSum[1] += gpsMeas[1]; 
+                numGPSMeas++;
+
+                //Write to file
+                //Write to file
+                gpsCalFile.print(time_in_static_calibration);
+                gpsCalFile.print(",");
+                gpsCalFile.print(gpsMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+                gpsCalFile.print(",");
+                gpsCalFile.print(gpsMeas[1],6);
+                gpsCalFile.print(",");
+                gpsCalFile.print(gpsMeas[2],6); 
+                gpsCalFile.print(",");
+                gpsCalFile.println(gpsMeas[3],6); 
+            }
         }
 
         //Run this at the fastest rate of sensors, so ~100Hz for IMU
@@ -341,17 +432,22 @@ void Sensors::calibrateSensors() {
             Serial.print("Static Calibration: ");
             Serial.print(time_in_static_calibration / (CONSTANTS::seconds2micro));
             Serial.print(" out of ");
-            Serial.print(60);
-            Serial.println(" seconds2micro");
+            Serial.print(30);
+            Serial.println(" seconds");
             next_print += 10*CONSTANTS::seconds2micro;
         }
     };
     imuCalFile.close(); //Close File
     altCalFile.close(); 
-    gpsCalFile.close(); 
+    magCalFile.close();
+    gpsCalFile.close();
     this -> setIMUCalibration(imuMeasSum, numIMUMeas);
     this -> setAltCalibration(altMeasSum, numAltMeas);
-    this -> setGPSCalibration(gpsMeasSum, numGPSMeas);
+    this -> setMagCalibration(magMeasSum, numMagMeas);
+
+    if (this->gpsFlag_ ) {
+        this -> setGPSCalibration(gpsMeasSum, numGPSMeas);
+    }
 
 };
 
@@ -505,6 +601,14 @@ void Sensors::setMagCalibration(Vector3f& hardIronCalibration, Rotation & softIr
     this -> magSoftIron_ = softIronCalibration;
 };
 
+void Sensors::setMagCalibration(std::array<float,3>& magData, float numData) {
+    this -> magRef_ = Vector3f(magData[0]/numData, magData[1]/numData, magData[2]/numData);
+    Serial.println("Mag Ref is...");
+    Serial.println(this->magRef_[0]);
+    Serial.println(this->magRef_[1]);
+    Serial.println(this->magRef_[2]);
+};
+
 void Sensors::calibrateMagnetometer() {
     // This should be done off-board. Collect data, run Least Squares, then input calibrated values.
     // Values shouldn't change much if environment / magnetic interferance doesn't change. 
@@ -515,7 +619,8 @@ void Sensors::calibrateMagnetometer() {
     //bool mag_calibration_quality_check = false;
     
     // Open Magnetometer Calibration File
-    File magCalFile = SD.open("mag_calibration.csv", FILE_WRITE);
+    SD.remove("mag_dynamic_calibration.csv"); //Make sure its clean
+    File magCalFile = SD.open("mag_dynamic_calibration.csv", FILE_WRITE);
     if (!magCalFile) {
         Serial.println("Failed to open Magnetometer Calibration file");
         return;
@@ -523,8 +628,8 @@ void Sensors::calibrateMagnetometer() {
     magCalFile.println("time, mx, my, mz"); //Header
     Serial.println("Starting Dynamic Calibrations ...");
     unsigned long time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
-    unsigned long next_print = 0; // Keeps track of when to print out progress
-    while (time_in_dynamic_calibration < 60 * CONSTANTS::seconds2micro) {
+    //unsigned long next_print = 0; // Keeps track of when to print out progress
+    while (time_in_dynamic_calibration < 5 * 60 * CONSTANTS::seconds2micro) { // Collect Data for 5 minutes
 
         std::array<float,3> magMeas = this->getMagMeas(dynamic_calibration_now);
 
@@ -546,18 +651,18 @@ void Sensors::calibrateMagnetometer() {
         delayMicroseconds(this->freqMag_); //Run this at frequency of Magnetometer since its the only sensor here
         dynamic_calibration_now = micros();
         time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
-        if (time_in_dynamic_calibration >= next_print) {
-            Serial.print("Dynamic Calibration: ");
-            Serial.print(time_in_dynamic_calibration / CONSTANTS::seconds2micro);
-            Serial.print(" out of ");
-            Serial.print(60);
-            Serial.println(" seconds2micro");
-            next_print += 10*CONSTANTS::seconds2micro;
-        }
+        // if (time_in_dynamic_calibration >= next_print) {
+        //     Serial.print("Dynamic Calibration: ");
+        //     Serial.print(time_in_dynamic_calibration / CONSTANTS::seconds2micro);
+        //     Serial.print(" out of ");
+        //     Serial.print(60);
+        //     Serial.println(" seconds");
+        //     next_print += 10*CONSTANTS::seconds2micro;
+        // }
     };
     magCalFile.close(); //Close File
     Serial.println("Finished Collecting Data. Please unplug and perform post processing . . . ");
-    while (1); //Infinite loop here. Shouldn't proceed if calibrating mangeometer.
+
     
 }
 
@@ -571,8 +676,7 @@ std::array<float,3> Sensors::getMagMeas(unsigned long now) {
 
         magMeas[0] = mag_m.magnetic.x;
         magMeas[1] = mag_m.magnetic.y;
-        magMeas[2] = mag_m.magnetic.z;
-
+        magMeas[2] = -mag_m.magnetic.z; //Negative here since the magnetometer is Left Handed. So while X-Y is properly aligned, Z is flipped from Right Handed Coordinate
         this -> lastMag_ = now;
     } else {
         magMeas = {NAN, NAN, NAN};
@@ -580,11 +684,14 @@ std::array<float,3> Sensors::getMagMeas(unsigned long now) {
     return magMeas;
 }
 
+Vector3f Sensors::getMagRef() {
+    return this->magRef_;
+};
 
 // -------------------------- Altimeter Functions ------------------------------
 void Sensors::setAltPressureOversampling(uint8_t altOversamplingFactor) {
     this->alt_.setPressureOversampling(altOversamplingFactor);
-    this->alt_.setTemperatureOversampling(BMP3_NO_OVERSAMPLING); //Hardcode to no oversample for temperature
+    this->alt_.setTemperatureOversampling(altOversamplingFactor); //Hardcode to no oversample for temperature
 };
 
 void Sensors::setAltFilterCoefficent(uint8_t altFilterCoeff) {
@@ -597,15 +704,17 @@ void Sensors::setAltUpdateRate(uint8_t altRate) {
 
 void Sensors::setAltCalibration(float altDataSum, int numAltMeas) {
     //Get IMU Bias
-    this -> referenceAltitude_ = altDataSum / numAltMeas;
+    //this -> referenceAltitude_ = altDataSum / numAltMeas;
+    this -> referencePressure_ = altDataSum/numAltMeas;
 
+    Serial.println(altDataSum, 9);
     //Do some other checks in here if necessary
     Serial.print("Altimeter Calibrated Successfully with ");
     Serial.print(numAltMeas);
     Serial.println(" data.");
-    Serial.print("Reference Height : ");
-    Serial.print(this->referenceAltitude_,6);
-    Serial.println(" m");
+    Serial.print("Reference Pressure : ");
+    Serial.print(this->referencePressure_,6);
+    Serial.println(" hpa");
 }
 
 float Sensors::getAltMeas(unsigned long now) {
@@ -613,7 +722,8 @@ float Sensors::getAltMeas(unsigned long now) {
     if (now - this -> lastAlt_ >= this -> freqAlt_) {
 
         //Get Altimeter Reading
-        AltMeas = this->alt_.readAltitude(CONSTANTS::seaLevelPressure);
+        //AltMeas = this->alt_.readAltitude(CONSTANTS::seaLevelPressure);
+        AltMeas = this->alt_.readPressure()/100.0f; //Returns pressure in hpa
         this -> lastAlt_ = now;
     } else {
         AltMeas =  NAN;
@@ -622,6 +732,11 @@ float Sensors::getAltMeas(unsigned long now) {
 }
 
 // -------------------------- GPS Functions ------------------------------
+void Sensors::setGPSFlag(const bool gpsFlag) {
+    this->gpsFlag_ = gpsFlag;
+}
+
+
 void Sensors::setGPSNMEAFormat(const char* gpsNMEAFormat) {
     this->gps_.sendCommand(gpsNMEAFormat);
 };
@@ -672,8 +787,11 @@ void Sensors::setGPSCalibration(std::array<double,2>& gpsDataSum, int numGPSMeas
     this->referenceLatitude_ = gpsDataSum[0] / numGPSMeas;
     this->referenceLongitude_ = gpsDataSum[1] / numGPSMeas;
 
+
     //Set ref ECEF Position
-    this->referenceECEFPosition_ = this->LLA2ECEF(this->referenceLatitude_, this->referenceLongitude_, this->referenceAltitude_);
+    // Assume we start at 0 Altitude. This is probably fine since the difference is a couple meters, which shouldn't pose too much of an issue
+    // Considering the magnitude of the other terms
+    this->referenceECEFPosition_ = this->LLA2ECEF(this->referenceLatitude_, this->referenceLongitude_, 0.0); 
 
     //Set ECEF2NED_
     //hardcode the formula R2(-pi/2)R2(-Lat)R3(Long) = R2(-Lat-pi/2)R3(Long) [Passive convention]

@@ -2,8 +2,10 @@
 #ifndef _SETUP_H
 #define _SETUP_H
 
+
 #include <Arduino.h> //Platformio doesn't insert this at compile time like Ardiuno does
 #include <Servo.h>
+
 namespace SETUP {
 // ========================= Vehicle Parameters =========================
 
@@ -19,15 +21,33 @@ inline constexpr float L = 0.75f; // Pitch / Roll Moment arm
 // Sensor polling frequencies
 inline constexpr float imuFrequency {100}; //Hz
 inline constexpr float magFrequency {50}; //Hz
-inline constexpr float altFrequency {50}; //Hz
+inline constexpr float altFrequency {25}; //Hz, 25 Hz for Indoors
 inline constexpr float gpsFrequency {1}; //Hz
 
+//Use these in main to determine looping frequencies. Will replace with interrupts eventually
+float imuLoopFrequency = 1000000UL / imuFrequency; 
+float magLoopFrequency = 1000000UL / magFrequency;
+float altLoopFrequency = 1000000UL / altFrequency; 
+float gpsLoopFrequency = 1000000UL / gpsFrequency;
+
 // Sensor Calibration / Orientations
-inline constexpr std::array<float,3> magHardIron{0.0, 0.0, 0.0};
-inline constexpr std::array<float,9> magSoftIron{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-inline constexpr std::array<float,9> rotIMU2Body{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-inline constexpr std::array<float,9> rotMag2Body{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-inline constexpr std::array<float,9> rotMag2TrueNED{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+//inline constexpr std::array<float,3> magHardIron{-53.550001000000002 ,  7.199998500000000 ,-14.550001500000000};
+inline constexpr std::array<float,3> magHardIron{-54.756429, 7.184927, 13.532636};
+// inline constexpr std::array<float,9> magSoftIron{0.022796974373613, 0.000169347121256, -0.000135727939028, 
+//                                                  0.000169347121256, 0.022743898721181, -0.000716086610041,
+//                                                  -0.000135727939028, -0.000716086610041, 0.022593055575845};
+inline constexpr std::array<float,9> magSoftIron {0.994268, 0.009895, 0.008865,
+                                                0.009895, 1.010350, 0.031712,
+                                                0.008865, 0.031712, 1.000568};
+
+
+inline constexpr std::array<float,9> rotBody2IMU{1.0, 0.0, 0.0, 
+                                                0.0, -1.0, 0.0, 
+                                                0.0, 0.0, -1.0};
+inline constexpr std::array<float,9> rotBody2Mag{1.0, 0.0, 0.0, 
+                                                0.0, 1.0, 0.0, 
+                                                0.0, 0.0, 1.0};
+
 
 // GPS Wiring
 HardwareSerial& gpsSerial = Serial8; // GPS Connected to Tx/Rx 8 UART
@@ -76,7 +96,8 @@ inline constexpr float sig_alt(0.1f);
 inline constexpr float sig_gps_pos(5.0f);
 inline constexpr float sig_gps_vel(0.1f);
 
-
+// This is the Reference vector for EKF. Either user provided, or passed to from Sensor Calibrations, in which We aren't really pointed at True North or Mag north, and using a local frame instead that is rotated from Mag North.
+//inline constexpr Vector3f magRef{11.4299 * PI/180}; 
 // ========================= Motors =========================
 // Pins are 28 29 37 36 (top to bottom), left to right
 inline constexpr int esc1SignalPin = 28;

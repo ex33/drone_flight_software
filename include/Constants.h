@@ -9,6 +9,7 @@ inline constexpr float deg2rad = 0.0174532925199433f; // pi/180
 
 // Time constants
 inline const unsigned long seconds2micro = 1000000UL;
+inline const unsigned long seconds2milli = 1000UL;
 // GPS Constants
 inline constexpr float WGS84_a = 6378137.0f; // m, semi-major axis of ellpsiod
 inline constexpr float WGS84_e2 = 0.006694379990140f; // n.d., eccentricity^2 of ellipsoid

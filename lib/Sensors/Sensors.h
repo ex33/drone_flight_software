@@ -84,7 +84,7 @@ public:
     * Set all starting rates, operational modes, etc.
     * Expect array inputs so they can be inside SetUp.h as const expr
      */
-    void setUpSensors(std::array<float,3> magHardIronArray, std::array<float,9> magSoftIronArray, std::array<float,9> magNE2TrueNEArray,
+    void setUpSensors(std::array<float,3> magHardIronArray, std::array<float,9> magSoftIronArray, 
                             std::array<float,9> rotBody2IMUArray, std::array<float,9> rotBody2MagArray);
 
     /**
@@ -190,6 +190,15 @@ public:
     void setMagCalibration(Vector3f& hardIronCalibration, Rotation & softIronCalibration);
 
     /**
+    * @brief Overload for Static Calibration of Magnetometer Reference when stationary
+    * 
+    * @param magDataSum Summation of IMU data collected over a period of time
+    * @param numMagMeas Number of IMU data collected to calculate sum
+    * 
+     */
+    void setMagCalibration(std::array<float,3>& magDataSum, float numMagMeas);
+
+    /**
     * @brief Collect data for Magnetometer Calibration
     * 
     * Collect data for 60 seconds. 
@@ -209,6 +218,14 @@ public:
      */
     std::array<float,3> getMagMeas(unsigned long now);
 
+    
+    /**
+    * @brief Returns magnetometer reference from Calibration
+    * 
+    * 
+    * @return this->MagRef_
+     */
+    Vector3f getMagRef();
     // -------------------------- Altimeter Functions ------------------------------
     /**
     * @brief Sets the altimeter oversampling settings. Options are:
@@ -274,6 +291,15 @@ public:
     float getAltMeas(unsigned long now);
 
     // -------------------------- GPS Functions ------------------------------
+    /**
+    * @brief Sets flag for whether GPS will be used or not
+    * 
+    * @param gps_flag
+    * 
+     */
+    void setGPSFlag(const bool gps_flag);
+
+
     /**
     * @brief Sets the gps NMEA sentence format
     * Predefined options are under Adafruit_PMTK.h
@@ -381,7 +407,7 @@ private:
     Rotation rotBody2Mag_;
     Vector3f magHardIron_ {NAN,NAN,NAN}; 
     Rotation magSoftIron_ = std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; 
-    Rotation magNE2TrueNE_ =std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; //Adjusts for inclination and declination
+
 
     //Time since last measurements ( Initialize w/ zero so start with a reading )
     unsigned long lastIMU_ = 0; 
@@ -389,15 +415,19 @@ private:
     unsigned long lastAlt_ = 0;
     unsigned long lastGPS_ = 0;
 
+
+
+
     //------------ Calibrated ----------------
     // Return for NAV Init
     Vector3f startUpAccelBiasBody_ {NAN,NAN,NAN}; 
     Vector3f startUpGyroBiasBody_ {NAN,NAN,NAN}; 
+    Vector3f magRef_ {NAN, NAN, NAN};
 
     // GPS Stuff
     std::array<double,3> referenceECEFPosition_ {NAN,NAN,NAN}; //Double to handle large value
     Rotation ECEF2NED_ = std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; //Replace with rotation matrix class
-    double referenceAltitude_ {NAN}; //From Alitmeter calibration
+    float referencePressure_ {NAN};
     double referenceLatitude_ {NAN}; //From GPS Calibration
     double referenceLongitude_ {NAN}; //From GPS Calibration
 
@@ -406,6 +436,7 @@ private:
     
     bool calibratedSensors_ = false; //Once calibrated, use calibrated parameters
     bool gpsFix_ = false; 
+    bool gpsFlag_ = true; // Assume we are running gps
 
     //------------- Current Measurements ----------------
     //Used to get referenceECEFPosition, but not used afterwards.

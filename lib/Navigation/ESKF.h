@@ -255,11 +255,21 @@ public:
 
      * @param z Proceesed Sensor Measurements (Accelerometer, Gyro, Magnetometer, Altimeter, GPS). 
      *
-     * Note: Tile Handed in update()
+     * Note: Tile Handled in update()
      */
     void step(std::array<float,14> z);
     
     
+    /**
+     * @brief Set the Magnetometer Reference Vector
+     * 
+
+     * @param magRef
+     *
+     */
+    void setMagRef(Vector3f magRef);
+
+
     // Getter functions. More for regression testing
     inline Vector3f getPosition() const {
         return this->p_k;
@@ -364,6 +374,8 @@ private:
     float sigGPSPos_;
     float sigGPSVel_;
 
+    //Mag Ref
+    Vector3f magRef_;
 
 
 };

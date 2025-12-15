@@ -274,7 +274,7 @@ void ESKF::update(const Vector3f& magMeas, const Vector3f& tiltMeas, const float
         // 1. Create Observation Matrix H and observation model h(x). Suppose to be...
         // H = [zeros(3,6), skew(q2R(q_k)*[1;0;0]), zeros(3,6), eye(3)]
         // Split it up into 3 vectors to perform sequential updates 
-        Vector3f hx = q2R(this->q_k) * Vector3f(1.0f, 0.0f, 0.0f);
+        Vector3f hx = q2R(this->q_k) * this->magRef_;
         Rotation skew_RVec = skew(hx);
 
         // 2. Sequentially update each component
@@ -352,7 +352,7 @@ void ESKF::update(const Vector3f& magMeas, const Vector3f& tiltMeas, const float
 
         // 1. Update Down Position
         // H = [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the third row / col --> idx = 2
-        this->scalarGPSAltUpdate( 2, altMeas, this->p_k[2], sigAlt2,  P_temp, del_xk, K, P_row); 
+        this->scalarGPSAltUpdate( 2, -altMeas, this->p_k[2], sigAlt2,  P_temp, del_xk, K, P_row);  //Negative alt meas for DOWN 
     }
 
 
@@ -366,4 +366,7 @@ void ESKF::update(const Vector3f& magMeas, const Vector3f& tiltMeas, const float
 }
 
 
+void ESKF::setMagRef(Vector3f magRef) {
+    this->magRef_ = magRef.normalize();
+};
 
