@@ -21,10 +21,10 @@ FSM::State currentState;
 
 
 Sensors sensors(SETUP::imuFrequency, SETUP::magFrequency, SETUP::altFrequency, SETUP::gpsFrequency, SETUP::gpsSerial); //GPS connected to port 8
-
+bool gps_flag = false;
 
 ESKF eskf(SETUP::p0, SETUP::v0, SETUP::q0, SETUP::ba0, SETUP::bg0, SETUP::bm0, 
-          SETUP::P0, SETUP::dt,
+          SETUP::P0, 
           SETUP::sig_acc, SETUP::sig_gyro, SETUP::eta_acc, SETUP::eta_gyro, SETUP::eta_mag,
           SETUP::sig_mag, SETUP::sig_tilt, SETUP::sig_alt, SETUP::sig_gps_pos, SETUP::sig_gps_vel);
 
@@ -33,7 +33,14 @@ Servo motor2CCW;
 Servo motor3CW; 
 Servo motor4CCW; 
 
-std::array<float,14> z; //Measurement container
+
+//Measurements
+std::array<float,6> imuMeas;
+std::array<float,3> magMeas;
+float altMeas;
+std::array<float,4> gpsMeas;
+
+//States
 Vector3f p_k;
 Vector3f v_k;
 Quaternion q_k;
@@ -333,10 +340,6 @@ void SETUP_Test_Sensors_Motors() {
   // Run Calibrations
   sensors.calibrateSensors(); // Get IMU Bias, checks GPS lock
 
-  //Test sensor measurements
-  sensors.updateMeasurements();
-  sensors.printMeasurements();
-
 
   Serial.println("Done Test, Forever looping...");
   while (1) { //Eventually replace with error
@@ -390,7 +393,7 @@ void SETUP_AllanVariance() { //Using millis() to prevent overflow from bits
 
   // Begin Sensors
   Wire.begin(); //Initializes default I2C bus (SDA / SCL pins)
-  sensors.setGPSFlag(false); //Not running GPS
+  sensors.setGPSFlag(gps_flag); //Not running GPS
   sensors.startUpSensors(); // Ensures communication is on
   sensors.setUpSensors(SETUP::magHardIron, SETUP::magSoftIron, SETUP::rotBody2IMU, SETUP::rotBody2Mag); //Also sets up frequencies of sensors / ODR [HARDCODED]
 
@@ -409,7 +412,6 @@ void SETUP_AllanVariance() { //Using millis() to prevent overflow from bits
   std::array<float,6> imuMeas; //Holds IMU Measurements
 
   uint32_t time_elapsed = 0.0; //Keeps track of time in loop
-  uint32_t lastIMU = 0.0;
   uint32_t logger_last_flush = 0.0; //Keeps track of last SD card flush
 
   Serial.println("Starting IMU Logging...");
@@ -417,33 +419,29 @@ void SETUP_AllanVariance() { //Using millis() to prevent overflow from bits
   while (time_elapsed < imu_logger_duration) {
     loop_start_time = millis();
 
-    if ((loop_start_time - lastIMU) >= SETUP::imuLoopFrequency) {
-      time_elapsed = millis() - initial_time; // Wrap safe subtraction. micros() will overflow after 72 mintues and restart at 0.
-      imuMeas = sensors.getIMUMeas(loop_start_time);
+    if (sensors.imuUpdate(loop_start_time)) {
+      time_elapsed = loop_start_time - initial_time; 
+      imuMeas = sensors.getIMUMeas();
 
-      if (!isnan(imuMeas[0])) {
-          //Write to file
-          imuAllanVarianceFile.print(time_elapsed/1000); //Convert milli seconds to seconds
-          imuAllanVarianceFile.print(",");
-          imuAllanVarianceFile.print(imuMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-          imuAllanVarianceFile.print(",");
-          imuAllanVarianceFile.print(imuMeas[1],6);
-          imuAllanVarianceFile.print(",");
-          imuAllanVarianceFile.print(imuMeas[2],6); 
-          imuAllanVarianceFile.print(",");
-          imuAllanVarianceFile.print(imuMeas[3],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-          imuAllanVarianceFile.print(",");
-          imuAllanVarianceFile.print(imuMeas[4],6);
-          imuAllanVarianceFile.print(",");
-          imuAllanVarianceFile.println(imuMeas[5],6); 
-      }
+        //Write to file
+        imuAllanVarianceFile.print(time_elapsed/1000); //Convert milli seconds to seconds
+        imuAllanVarianceFile.print(",");
+        imuAllanVarianceFile.print(imuMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+        imuAllanVarianceFile.print(",");
+        imuAllanVarianceFile.print(imuMeas[1],6);
+        imuAllanVarianceFile.print(",");
+        imuAllanVarianceFile.print(imuMeas[2],6); 
+        imuAllanVarianceFile.print(",");
+        imuAllanVarianceFile.print(imuMeas[3],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+        imuAllanVarianceFile.print(",");
+        imuAllanVarianceFile.print(imuMeas[4],6);
+        imuAllanVarianceFile.print(",");
+        imuAllanVarianceFile.println(imuMeas[5],6); 
 
       if (loop_start_time - logger_last_flush >= imu_logger_flush_rate) { //Flush every 10 minutes
           logger_last_flush = millis();
           imuAllanVarianceFile.flush();
       }
-
-      lastIMU += SETUP::imuLoopFrequency; //Keeps consistent track of lastIMU. using micros() factors in execution delay which doesn't work well in ensuring the timestep is consisntent
     }
   }
   imuAllanVarianceFile.close();
@@ -474,8 +472,6 @@ void SETUP_AllanVariance() { //Using millis() to prevent overflow from bits
   std::array<float,3> magMeas; //Magnetometer measurements
   float altMeas; //Altimeter measurements
   loop_time_step = CONSTANTS::seconds2micro / SETUP::magFrequency;
-  float lastMag = 0.0;
-  float lastAlt = 0.0;
   time_elapsed = 0.0; // Reset Time
   initial_time = millis();
   while (time_elapsed < mag_alt_logger_duration) { //No need for periodic flushing since this is running for a shorter time
@@ -483,34 +479,28 @@ void SETUP_AllanVariance() { //Using millis() to prevent overflow from bits
     loop_start_time = millis();
 
     // Magnetometer loop
-    if (loop_start_time - lastMag >= SETUP::magLoopFrequency) {
+    if (sensors.magUpdate(loop_start_time)) {
       time_elapsed = loop_start_time - initial_time;
-      magMeas = sensors.getMagMeas(loop_start_time);
+      magMeas = sensors.getMagMeas();
 
-      if (!isnan(magMeas[0])) {
-        magWhiteNoiseFile.print(time_elapsed/1000);
-        magWhiteNoiseFile.print(",");
-        magWhiteNoiseFile.print(magMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-        imuAllanVarianceFile.print(",");
-        magWhiteNoiseFile.print(magMeas[1],6);
-        magWhiteNoiseFile.print(",");
-        magWhiteNoiseFile.println(magMeas[2],6); 
-      }
-      lastMag += SETUP::magLoopFrequency;
+      magWhiteNoiseFile.print(time_elapsed/1000);
+      magWhiteNoiseFile.print(",");
+      magWhiteNoiseFile.print(magMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+      imuAllanVarianceFile.print(",");
+      magWhiteNoiseFile.print(magMeas[1],6);
+      magWhiteNoiseFile.print(",");
+      magWhiteNoiseFile.println(magMeas[2],6); 
+
     }
-
     // Altimeter loop
-    if (loop_start_time - lastAlt >= SETUP::altLoopFrequency) {
+    if (sensors.altUpdate(loop_start_time)) {
       time_elapsed = loop_start_time - initial_time;
-      altMeas = sensors.getAltMeas(loop_start_time);
+      altMeas = sensors.getAltMeas();
+      //Write to file
+      altWhiteNoiseFile.print(time_elapsed/1000);
+      altWhiteNoiseFile.print(",");
+      altWhiteNoiseFile.println(altMeas,6); 
 
-      if (!isnan(altMeas)) {
-        //Write to file
-        altWhiteNoiseFile.print(time_elapsed/1000);
-        altWhiteNoiseFile.print(",");
-        altWhiteNoiseFile.println(altMeas,6); 
-      }
-      lastAlt += SETUP::altLoopFrequency;
     }
 
  
@@ -548,7 +538,7 @@ void SETUP_Preflight_Check() {
   pinMode(LED_BUILTIN, OUTPUT); //Configure built in LED 
   // ------------- Sensor Checkout and Setup -----------------
   // Determine if we want to run with GPS or not
-  sensors.setGPSFlag(false);
+  sensors.setGPSFlag(gps_flag);
 
   delay(500); //Delay a few milliseconds after sensor start-up. IMU has wonky first reading
   sensors.startUpSensors();
@@ -600,6 +590,8 @@ void SETUP_Preflight_Check() {
     delay(1000);
   }
   Serial.println("Starting ...");
+
+  while(1) {};
   delay(2000);
 
 
@@ -680,84 +672,94 @@ void setup() {
   //SETUP_Find_Motors_Start();
   //SETUP_Find_Motor_Directions();
   //SETUP_Offboard_Calibration();
-  SETUP_AllanVariance();
-  //SETUP_Preflight_Check();
+  //SETUP_AllanVariance();
+  SETUP_Preflight_Check();
 }
 
 void loop() {
-  loop_start_time = micros();
+  loop_start_time = millis();
   // Get current time
-  current_time = loop_start_time - initial_time;
-
-  // Force File to flush every 10Hz timesteps (for 50hz, this is about every 5 timesteps)
-  if (loop_start_time - logger_last_flush >= 100000) { //100ms --> 10Hz
-      logger_last_flush = loop_start_time;
-      stateHistoryFile.flush();
-      measurementHistoryFile.flush();
-
-  }
-
+  current_time = (loop_start_time - initial_time) / CONSTANTS::seconds2milli; 
   // // Check/Switch States
 
-  //------ Sensors ------
-  // Sensors 
-  z = sensors.getMeasurements();
-  //Print out Accelerometer
-  // Serial.print(z[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-  // Serial.print(",");
-  // Serial.print(z[1],6);
-  // Serial.print(",");
-  // Serial.println(z[2],6); 
+  //------ Sensors / Navigation------
+  // IMU Loop
+  if (sensors.imuUpdate(loop_start_time)) {
+    imuMeas = sensors.processIMUMeas(sensors.getIMUMeas());
+    eskf.predict(imuMeas, loop_start_time);
 
-  //Print out Gyro
-  // Serial.print(z[3],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-  // Serial.print(",");
-  // Serial.print(z[4],6);
-  // Serial.print(",");
-  // Serial.println(z[5],6); 
+    // Update the tilt. Will do a check to see if accelerometer magnitude is small enough
+    eskf.updateTiltMeas(std::array<float,3> {imuMeas[0], imuMeas[1], imuMeas[2]}); 
 
-  //Print out Mag
-  // Serial.print(z[6],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-  // Serial.print(",");
-  // Serial.print(z[7],6);
-  // Serial.print(",");
-  // Serial.println(z[8],6); 
+    //Push Meas to buffer / ram
+  }
 
-  //Print Out Alt
-  //Serial.println(z[9],6); 
+  // Magnetometer Loop
+  if (sensors.magUpdate(loop_start_time)) {
+    magMeas = sensors.processMagMeas(sensors.getMagMeas());
+    //Tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable. 
+    eskf.updateMagMeas(magMeas);
+    //Push Meas to buffer / ram
+  }
 
-  // Navigation
-  eskf.step(z);
+  // Altimeter Loop
+  if (sensors.altUpdate(loop_start_time)) {
+    altMeas = sensors.processAltMeas(sensors.getAltMeas());
+    //Tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable. 
+    eskf.updateAltMeas(altMeas);
+
+    //Push Meas to buffer / ram
+  }
+
+  // GPS Loop
+  if (gps_flag) {
+    if (sensors.gpsUpdate(loop_start_time)) {
+      gpsMeas = sensors.processGPSMeas(sensors.getGPSMeas(),-eskf.getPosition()[2]); //Get the best estimate of altitude, which is just our UP direction (negative of Z axis)
+      //Tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable. 
+      eskf.updateGPSMeas(gpsMeas);
+
+      //Push Meas to buffer / ram
+    }
+  }
+
+  // Inject Error of the eskf if there were any updates (use a flag here)
+  eskf.injectError(); // This updates the states
+
+  //Get the states 
   p_k = eskf.getPosition();
   v_k = eskf.getVelocity();
   q_k = eskf.getQuaternion();
   w_k = eskf.getBodyRates(); 
 
-  Serial.print(p_k[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-  Serial.print(",");
-  Serial.print(p_k[1],6);
-  Serial.print(",");
-  Serial.print(p_k[2],6); 
-  Serial.print(",");
-  Serial.print(v_k[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-  Serial.print(",");
-  Serial.print(v_k[1],6);
-  Serial.print(",");
-  Serial.print(v_k[2],6); 
-  Serial.print(",");
-  Serial.print(q_k.w(),6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-  Serial.print(",");
-  Serial.print(q_k.x(),6);
-  Serial.print(",");
-  Serial.print(q_k.y(),6); 
-  Serial.print(",");
-  Serial.print(q_k.z(),6); 
-  Serial.print(",");
-  Serial.print(w_k[0],6);
-  Serial.print(",");
-  Serial.print(w_k[1],6); 
-  Serial.print(",");
-  Serial.println(w_k[2],6); 
+  //Push state to buffer / ram
+
+  // Serial.print(p_k[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+  // Serial.print(",");
+  // Serial.print(p_k[1],6);
+  // Serial.print(",");
+  // Serial.print(p_k[2],6); 
+  // Serial.print(",");
+  // Serial.print(v_k[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+  // Serial.print(",");
+  // Serial.print(v_k[1],6);
+  // Serial.print(",");
+  // Serial.print(v_k[2],6); 
+  // Serial.print(",");
+  // Serial.print(q_k.w(),6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+  // Serial.print(",");
+  // Serial.print(q_k.x(),6);
+  // Serial.print(",");
+  // Serial.print(q_k.y(),6); 
+  // Serial.print(",");
+  // Serial.print(q_k.z(),6); 
+  // Serial.print(",");
+  // Serial.print(w_k[0],6);
+  // Serial.print(",");
+  // Serial.print(w_k[1],6); 
+  // Serial.print(",");
+  // Serial.println(w_k[2],6); 
+
+
   // Guidance
 
 
@@ -766,14 +768,13 @@ void loop() {
 
 
   // Save down into SD card
-  saveStep(current_time, p_k, v_k, q_k, w_k, z, stateHistoryFile, measurementHistoryFile);
-  // Can save ~50 samples, so basically wrtite to SD card every ~0.5 seconds.
-  //delayMicroseconds(loop_time_step); // Running at IMU frequency, which should be the fastest
-  loop_end_time = micros();
-  loop_delay_time = loop_time_step - (loop_end_time - loop_start_time);
+  //saveStep(current_time, p_k, v_k, q_k, w_k, stateHistoryFile, measurementHistoryFile);
 
-  if (loop_delay_time > 0) { //Only need to delay if we are under the desired loop time step. If we are over, need to speed things up or run at lower frequency. Should double check if this is consistently positive!
-    delayMicroseconds(loop_delay_time);
+  // Force File to flush every 10Hz timesteps (for 50hz, this is about every 5 timesteps)
+  if (loop_start_time - logger_last_flush >= 100000) { //100ms --> 10Hz
+      logger_last_flush = loop_start_time;
+      stateHistoryFile.flush();
+      measurementHistoryFile.flush();
   }
 }
 

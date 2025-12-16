@@ -2,21 +2,20 @@
 #include <Mathpk.h>
 #include<unity.h>
 #include <string>
-#define COMPARE_QUATERNION(TruthQuat, TestQuat, tol) \
-    compare_quaternion((TruthQuat), (TestQuat), (tol), __FILE__, __LINE__)
+
 
 
 float tol = 1e-5;
 
-Vector3f p0 (0.0f,0.0f,0.0f);
-Vector3f v0 (0.0f,0.0f,0.0f);
-Quaternion q0 (1.0f,0.0f,0.0f,0.0f);
-Vector3f ba0 (0.0f,0.0f,0.0f);
-Vector3f bg0 (0.0f,0.0f,0.0f);
-Vector3f bm0 (0.0f,0.0f,0.0f);
+std::array<float,3> p0 {0.0f,0.0f,0.0f};
+std::array<float,3>  v0 {0.0f,0.0f,0.0f};
+std::array<float,4> q0 {1.0f,0.0f,0.0f,0.0f};
+std::array<float,3>  ba0 {0.0f,0.0f,0.0f};
+std::array<float,3>  bg0 {0.0f,0.0f,0.0f};
+std::array<float,3>  bm0 {0.0f,0.0f,0.0f};
 
 
-std::array<float,324> P0_array {
+std::array<float,324> P0 {
     3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     0.0f, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     0.0f, 0.0f, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -36,9 +35,9 @@ std::array<float,324> P0_array {
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.01f, 0.0f,
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.01f
 };
-Matrix18f P0(P0_array);
 
-float dt (0.02f); // 50hz
+float dt = 0.02; //50Hz
+
 //Set Process Noise
 float sig_acc(0.003f);
 float sig_gyro(0.5f);
@@ -52,10 +51,11 @@ float sig_alt(0.1f);
 float sig_gps_pos(5.0f);
 float sig_gps_vel(0.1f);
 
-ESKF eskf(p0, v0, q0, ba0, bg0, bm0, 
-          P0, dt,
+ESKF eskf(p0, v0, q0, ba0, bg0, bm0, P0,
           sig_acc, sig_gyro, eta_acc, eta_gyro, eta_mag,
           sig_mag, sig_tilt, sig_alt, sig_gps_pos, sig_gps_vel);
+
+
 
 
 //Make these bool so that the actual test assert returns what lines.
@@ -113,8 +113,6 @@ inline bool compare_matrix(const Matrix18f& TruthMatrix, const Matrix18f& TestMa
 
 // // Individual test functions
 void test_init() {
-  TEST_ASSERT_FLOAT_WITHIN(tol, dt, eskf.getDt());
-
   TEST_ASSERT_FLOAT_WITHIN(tol, sig_acc, eskf.getSigAcc());
   TEST_ASSERT_FLOAT_WITHIN(tol, sig_gyro, eskf.getSigGyro());
   TEST_ASSERT_FLOAT_WITHIN(tol, eta_acc, eskf.getEtaAcc());
@@ -131,7 +129,7 @@ void test_init() {
   Matrix18f testP0 = eskf.getCovariance();
 
   char msg [100];
-  bool P0_test_result = compare_matrix(P0_array, testP0, tol, msg);
+  bool P0_test_result = compare_matrix(P0, testP0, tol, msg);
   TEST_ASSERT_TRUE_MESSAGE(P0_test_result, msg);
 
   
@@ -142,8 +140,9 @@ void test_init() {
 
 void test_functions() {
   // Test that Qd_ and STM are obtained / set properly
-  Matrix18f Qd = eskf.getQMatrix(); //Dependent upon noise
-  Matrix18f STM = eskf.getSTM(Quaternion(0.714844396765618f, 0.295237747760709f ,0.560951720745348f, 0.295237747760709f), ba0, bg0, Vector3f(0.35f, 0.5f,-10.5f), Vector3f(0.25f, 1.0f, 0.5f),dt); //Make sure its all different numbers
+
+  Matrix18f Qd = eskf.getQd(dt); //Dependent upon noise
+  Matrix18f STM = eskf.getSTM(Quaternion(0.714844396765618f, 0.295237747760709f ,0.560951720745348f, 0.295237747760709f), Vector3f(ba0), Vector3f(bg0), Vector3f(0.35f, 0.5f,-10.5f), Vector3f(0.25f, 1.0f, 0.5f),dt); //Make sure its all different numbers
   //Truth
 std::array<float, 324> QdTrue = {
     0.000000000024f, 0.0f, 0.0f, 0.0000000018f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -208,10 +207,11 @@ TEST_ASSERT_TRUE_MESSAGE(STM_test_result, msg);
 
 void test_propagation() {
   // Raw Accelerometer reading, gyro, magnetometer, altimeter, gps
-  std::array<float,14> z {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; // Propagate only
+  std::array<float,6> imuMeas {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f};
+  //std::array<float,14> z {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; // Propagate only
 
   //Propagate forward 1 timesteps. No Updates
-  eskf.step(z);
+  eskf.predictRegressionTest(imuMeas,dt);
 
   // True Values (From Sim)
   std::array<float,3> pos_true = {0.00007f, 0.0001f,-0.00013867f};
@@ -279,9 +279,9 @@ void test_propagation() {
   TEST_ASSERT_TRUE_MESSAGE(covariance_test_result, msg);
 
 
-  // Step forward anotehr two timesteps.
-  eskf.step(z);
-  eskf.step(z);
+  // Predict another two timesteps.
+  eskf.predictRegressionTest(imuMeas,dt);
+  eskf.predictRegressionTest(imuMeas,dt);
 
   pos_true = {0.000414595877949f,0.000954497829611f,-0.001249323598196f};
   vel_true = {0.008071457486999f,0.033252621338523f,-0.041641971420546f};
@@ -346,11 +346,22 @@ void test_propagation() {
   TEST_ASSERT_TRUE_MESSAGE(covariance_test_result, msg);
 }
 
+
+// Initial state / covariance of ESKF starts after the 3 propagation steps from previous test.
 void test_update() {
-  // Initial state / covariance of ESKF starts after the 3 propagation steps from previous test.
-  //Propagate and Update Magnetometer. Acceleromter reading too large for tilt
-  std::array<float,14> z = {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,0.996848222532429f, 0.0604830540752986f,-0.0513363555744027f,NAN, NAN, NAN, NAN,NAN}; 
-  eskf.step(z);
+  // Set mag Ref
+  eskf.setMagRef(Vector3f(1,0,0)); // Assume reference is just pointed North
+
+  // Form IMU and Mag Measurements
+  std::array<float,6> imuMeas {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f};
+  std::array<float,3> magMeas {0.996848222532429f, 0.0604830540752986f,-0.0513363555744027f};
+
+
+  //Propagate and Update Magnetometer. 
+  eskf.predictRegressionTest(imuMeas, dt);
+  eskf.updateMagMeas(magMeas);
+  eskf.injectError();
+  //std::array<float,14> z = {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,0.996848222532429f, 0.0604830540752986f,-0.0513363555744027f,NAN, NAN, NAN, NAN,NAN}; 
 
   // True Values (From Sim)
   std::array<float,3> pos_true = {0.000788550321710676f,0.00171215255675262f,-0.0021710675677584f};
@@ -418,10 +429,12 @@ void test_update() {
   TEST_ASSERT_TRUE_MESSAGE(covariance_test_result, msg);
 
 
-  // Update with Altimeter
-  z = {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,NAN,NAN,NAN, -0.0009644664277875f, NAN, NAN, NAN,NAN};  
-  eskf.step(z);
-
+  // Propagate and Update with Altimeter
+  float altMeas = 0.0009644664277875f;
+  //z = {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,NAN,NAN,NAN, -0.0009644664277875f, NAN, NAN, NAN,NAN};  
+  eskf.predictRegressionTest(imuMeas, dt);
+  eskf.updateAltMeas(altMeas);
+  eskf.injectError();
   // True Values (From Sim)
   pos_true = {0.00118403697573817f,0.0027833454407371f,-0.000972568594339513f};
   vel_true = {0.0277006852187752f,0.0607929281483409f, -0.0683315065286095f};
@@ -485,10 +498,12 @@ void test_update() {
   covariance_test_result = compare_matrix(P_true, P_est, tol, msg);
   TEST_ASSERT_TRUE_MESSAGE(covariance_test_result, msg);
 
-  // Update with GPS
-  z = {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,NAN,NAN,NAN, NAN, -0.00117903695028239f, -0.000528094651009709f, 0.0293177068457126f,0.06104907300949f};  
-  eskf.step(z);
-
+  //Predict and Update with GPS
+  std::array<float,4> gpsMeas{-0.00117903695028239f, -0.000528094651009709f, 0.0293177068457126f,0.06104907300949f};
+  //z = {0.35f,0.5f,-10.5f,0.25f,1.0f,0.5f,NAN,NAN,NAN, NAN, -0.00117903695028239f, -0.000528094651009709f, 0.0293177068457126f,0.06104907300949f};  
+  eskf.predictRegressionTest(imuMeas,dt);
+  eskf.updateGPSMeas(gpsMeas);
+  eskf.injectError();
   // True Values (From Sim)
   pos_true = {0.000478515797100809f,0.00202474697293928f,-0.0024726132546016f};
   vel_true = {0.0295072156375576f,0.0613436546423289f,-0.0816604357318603f};
@@ -554,9 +569,12 @@ void test_update() {
 
 
   // Update with Tilt
-  z = {0.15f,0.25f,-9.8f,0.25f,1.0f,0.5f,NAN,NAN,NAN, NAN, NAN, NAN, NAN, NAN};  
-  eskf.step(z);
-
+  imuMeas = {0.15f,0.25f,-9.8f,0.25f,1.0f,0.5f};
+  std::array<float,3> accelMeas {0.15f,0.25f,-9.8f};
+  //z = {0.15f,0.25f,-9.8f,0.25f,1.0f,0.5f,NAN,NAN,NAN, NAN, NAN, NAN, NAN, NAN};  
+  eskf.predictRegressionTest(imuMeas,dt);
+  eskf.updateTiltMeas(accelMeas);
+  eskf.injectError();
   // True Values (From Sim)
   pos_true = {0.00107128643592797f,0.00365183437544172f,-0.00423239683461646f};
   vel_true = {0.0328229334941043f,0.0728095963992288f,-0.085555873473521f};
@@ -621,12 +639,24 @@ void test_update() {
   TEST_ASSERT_TRUE_MESSAGE(covariance_test_result, msg);
 
   // Update with all 4 measurements
-  z = {0.15f,0.25f,-9.8f, //Accel
-       0.25f,1.0f,0.5f,   //Gyro
-       0.996848222532429f, 0.0604830540752986f,-0.0513363555744027f, //Mag
-      -0.0009644664277875f,  //Alt
-      -0.00117903695028239f, -0.000528094651009709f, 0.0293177068457126f,0.06104907300949f};   //GPS
-  eskf.step(z);
+  imuMeas = {0.15f,0.25f,-9.8f,0.25f,1.0f,0.5f};
+  accelMeas = {0.15f,0.25f,-9.8f};
+  magMeas = {0.996848222532429f, 0.0604830540752986f,-0.0513363555744027f};
+  altMeas = 0.0009644664277875f;
+  gpsMeas = {-0.00117903695028239f, -0.000528094651009709f, 0.0293177068457126f,0.06104907300949f};
+  //Test values were taken with the updates in the following order: Mag --> Tilt --> GPS --> Alt.
+  // In reality, order shouldn't matter
+  // z = {0.15f,0.25f,-9.8f, //Accel
+  //      0.25f,1.0f,0.5f,   //Gyro
+  //      0.996848222532429f, 0.0604830540752986f,-0.0513363555744027f, //Mag
+  //     -0.0009644664277875f,  //Alt
+  //     -0.00117903695028239f, -0.000528094651009709f, 0.0293177068457126f,0.06104907300949f};   //GPS
+  eskf.predictRegressionTest(imuMeas,dt);
+  eskf.updateMagMeas(magMeas);
+  eskf.updateTiltMeas(accelMeas);
+  eskf.updateGPSMeas(gpsMeas);
+  eskf.updateAltMeas(altMeas);
+  eskf.injectError();
   
   // Updates Mag --> Tilt --> GPS --> Alt
   // True Values (From Sim)

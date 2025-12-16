@@ -32,12 +32,13 @@ void test_gps_functions() {
     //Set up the internal References and ECEF2NED rotation
     std::array<double,2> refLLA = {refLatitude, refLongitude};
     sensors.setAltCalibration(refAlt,1); //Sets reference altitude
+    sensors.setGPSReferenceAltitude(refAlt); //Reference Altitude defaults to 0
     sensors.setGPSCalibration(refLLA, 1); //Sets reference r_ECEF AND ECEF2NED rotation
 
     //Test that if given the reference Lat,Long,Alt, we should get (0,0,0) for NED Position
     Vector3f rNED_NULL = sensors.LLA2NED(refLatitude, refLongitude, refAlt);
     for (unsigned int i = 0; i < 3; ++i) {
-        TEST_ASSERT_FLOAT_WITHIN(1e-4,rNED_NULL[i], 0);
+        TEST_ASSERT_FLOAT_WITHIN(1e-4, 0, rNED_NULL[i]);
     }
     //Now test that if we give a random Lat Long Alt, we should get the corresponding NED Position given our reference
     Vector3f rNED_test = sensors.LLA2NED(testLatitude, testLongitude, testAlt);

@@ -46,29 +46,6 @@ public:
     Sensors(float freqIMU, float freqMag, float freqAlt, float freqGPS, HardwareSerial &serialGPS); 
 
     // -------------------------- All Sensors Functions ------------------------------
-    /**
-    * @brief Updates ALL RAW measurements at the current time.
-    * 
-    * Goes through each sensor and calls their respective getMeas functions.
-    * Updates members that contains the current measurements for the sensors.
-    */
-    void updateMeasurements();
-
-    /**
-    * @brief Return ALL sensor readings at the current time for NAV Filter.
-    * 
-    * Need to call updateMeasurements before this to ensure all measurements are up to date.
-    * Will perform any calibration and rotations needed here before giving this to the NAV Filter. 
-    */
-    std::array<float,14> getMeasurements();
-
-    /**
-    * @brief Print ALL sensor readings at the current time.
-    * 
-    * Print All measurements that is currently part of the parameters
-    */
-    void printMeasurements();
-
     /** 
     * @brief Start up all sensors to ensure sensors are operational
     * 
@@ -142,29 +119,31 @@ public:
     void setIMUCalibration(std::array<float,6>& imuDataSum, int numIMUMeas);
 
     /**
-    * @brief Returns Calibrated Start-up bias for the accelerometer 
+    * @brief Checks internally if enough time has passed for there to be a new IMU measurement based on the given frequency
     * 
-    * @return Accelerometer Bias in Body frame
+    * @param now Time to check for imu measurements
+    * 
+    * @return If (time_now - time_since_last_measurement) > sensor_frequency, then this will update the member containing the 
+    * measurement and return TRUE to signal a new measurement is avaliable.
     */
-    Vector3f getAccelBias();
+    bool imuUpdate(uint32_t now);
+
+    // Seperated getIMUMeas and processIMUMeas so for cases where we need to raw measurement for calibration, we can get that value
+    /**
+    * @brief Returns the last RAW IMU 
+    * 
+    * @return Last RAW IMU Measurement 
+    */
+    std::array<float,6> getIMUMeas();
 
     /**
-    * @brief Returns Calibrated Start-up bias for the gyro
+    * @brief Process RAW IMU Measurement and returns it after accounting for start-up bias and frame rotations
     * 
-    * @return Gyro Bias in Body frame
+    * @param imuMeas Last Raw IMU Measurement
+    * 
+    * @return Last RAW IMU Measurement 
     */
-    Vector3f getGyroBias();
-
-    /**
-    * @brief Returns accelerometer/gyroscope measurement if the time since the last reading is greater 
-    * than the frequency set at initialization.
-    * 
-    * @param now Current time in microseconds
-    * 
-    * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
-    * Else, assume register has the same value and return NaN array
-    */
-    std::array<float,6> getIMUMeas(unsigned long now);
+    std::array<float,6> processIMUMeas(std::array<float,6> imuMeas); 
 
     // -------------------------- Magnetometer Functions ------------------------------
     /**
@@ -207,16 +186,33 @@ public:
      */
     void calibrateMagnetometer();
 
+
     /**
-    * @brief Returns magnetometer measurement if the time since the last reading is greater 
-    * than the frequency set at initialization.
+    * @brief Checks internally if enough time has passed for there to be a new Magnetometer measurement based on the given frequency
     * 
-    * @param now Current time in microseconds
+    * @param now Time to check for magnetometer measurements
     * 
-    * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
-    * Else, assume register has the same value and return NaN array
-     */
-    std::array<float,3> getMagMeas(unsigned long now);
+    * @return If (time_now - time_since_last_measurement) > sensor_frequency, then this will update the member containing the 
+    * measurement and return TRUE to signal a new measurement is avaliable.
+    */
+    bool magUpdate(uint32_t now);
+
+    // Seperated getMagMeas and processMagMeas so for cases where we need to raw measurement for calibration, we can get that value
+    /**
+    * @brief Returns the last RAW Magnetometer 
+    * 
+    * @return Last RAW Magnetometer Measurement 
+    */
+    std::array<float,3> getMagMeas();
+
+    /**
+    * @brief Process RAW Magnetometer Measurement and returns it after accounting for start-up bias and frame rotations
+    * 
+    * @param magMeas Last Raw Magnetometer Measurement
+    * 
+    * @return Last RAW Magnetometer Measurement 
+    */
+    std::array<float,3> processMagMeas(std::array<float,3> magMeas); 
 
     
     /**
@@ -280,15 +276,31 @@ public:
     void setAltCalibration(float altDataSum, int numAltMeas);
 
     /**
-    * @brief Returns altimeter measurement if the time since the last reading is greater 
-    * than the frequency set at initialization.
+    * @brief Checks internally if enough time has passed for there to be a new Altimeter measurement based on the given frequency
     * 
-    * @param now Current time in microseconds
+    * @param now Time to check for Altimeter measurements
     * 
-    * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
-    * Else, assume register has the same value and return NaN array
-     */
-    float getAltMeas(unsigned long now);
+    * @return If (time_now - time_since_last_measurement) > sensor_frequency, then this will update the member containing the 
+    * measurement and return TRUE to signal a new measurement is avaliable.
+    */
+    bool altUpdate(uint32_t now);
+
+    // Seperated getAltMeas and processAltMeas so for cases where we need to raw measurement for calibration, we can get that value
+    /**
+    * @brief Returns the last RAW Altimeter 
+    * 
+    * @return Last RAW Altimeter Measurement 
+    */
+    float getAltMeas();
+
+    /**
+    * @brief Process RAW Altimeter Measurement and returns it after accounting for start-up bias and frame rotations
+    * 
+    * @param altMeas Last Raw Altimeter Measurement
+    * 
+    * @return Last RAW Altimeter Measurement 
+    */
+    float processAltMeas(float altMeas); 
 
     // -------------------------- GPS Functions ------------------------------
     /**
@@ -376,16 +388,42 @@ public:
      */
     void setGPSCalibration(std::array<double,2>& gpsDataSum, int numGPSMeas);
 
+
     /**
-    * @brief Returns GPS measurement if the time since the last reading is greater 
-    * than the frequency set at initialization.
+    * @brief Checks internally if enough time has passed for there to be a new GPS measurement based on the given frequency
     * 
-    * @param now Current time in microseconds
+    * @param now Time to check for GPS measurements
     * 
-    * @return Checks register and returns measurement if (time_now - time_since_last_measurement) > sensor_frequency. 
-    * Else, assume register has the same value and return NaN array
-     */
-    std::array<double,5> getGPSMeas(unsigned long now);
+    * @return If (time_now - time_since_last_measurement) > sensor_frequency, then this will update the member containing the 
+    * measurement and return TRUE to signal a new measurement is avaliable.
+    */
+    bool gpsUpdate(uint32_t now);
+
+    // Seperated getGPSMeas and processGPSMeas so for cases where we need to raw measurement for calibration, we can get that value
+    /**
+    * @brief Returns the last RAW GPS 
+    * 
+    * @return Last RAW GPS Measurement 
+    */
+    std::array<double,5> getGPSMeas();
+
+    /**
+    * @brief Process RAW GPS Measurement and returns it after accounting for start-up bias and frame rotations
+    * 
+    * @param gpsMeas Last Raw GPS Measurement
+    * @param currentAlt Current best estimate of the altitude
+    * 
+    * @return Last RAW GPS Measurement 
+    */
+    std::array<float,4> processGPSMeas(std::array<double,5> gpsMeas, float currentAlt); 
+
+    /**
+    * @brief Set a reference altitude for GPS in case this is non-negliable for some reason
+    * 
+    * @param refAlt
+    * 
+    */
+    void setGPSReferenceAltitude(double refAlt);
 
 
 private:
@@ -396,40 +434,45 @@ private:
     Adafruit_BMP3XX alt_;
     Adafruit_GPS gps_; 
 
+    //Adafruit sensorEvents
+    sensors_event_t last_imu_accel_meas;
+    sensors_event_t last_imu_gyro_meas; 
+    sensors_event_t last_imu_temp_meas;
+    sensors_event_t last_mag_meas;
+    float last_alt_meas;
+    std::array<double,5> last_gps_meas;
+
     //Frequencies (micro-seconds)
-    float freqIMU_; 
-    float freqMag_;
-    float freqAlt_;
-    float freqGPS_;
+    uint32_t freqIMU_; 
+    uint32_t freqMag_;
+    uint32_t freqAlt_;
+    uint32_t freqGPS_;
 
     //Rotations
     Rotation rotBody2IMU_;
     Rotation rotBody2Mag_;
-    Vector3f magHardIron_ {NAN,NAN,NAN}; 
-    Rotation magSoftIron_ = std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; 
+    Vector3f magHardIron_ ; 
+    Rotation magSoftIron_ ; 
 
-
-    //Time since last measurements ( Initialize w/ zero so start with a reading )
-    unsigned long lastIMU_ = 0; 
-    unsigned long lastMag_ = 0; 
-    unsigned long lastAlt_ = 0;
-    unsigned long lastGPS_ = 0;
-
-
-
+    //Time since last measurements ( Initialize w/ zero so start with a reading ) 
+    uint32_t lastIMU_ = 0; 
+    uint32_t lastMag_ = 0; 
+    uint32_t lastAlt_ = 0;
+    uint32_t lastGPS_ = 0;
 
     //------------ Calibrated ----------------
     // Return for NAV Init
-    Vector3f startUpAccelBiasBody_ {NAN,NAN,NAN}; 
-    Vector3f startUpGyroBiasBody_ {NAN,NAN,NAN}; 
-    Vector3f magRef_ {NAN, NAN, NAN};
+    Vector3f startUpAccelBiasSensor_ ; 
+    Vector3f startUpGyroBiasSensor_ ; 
+    Vector3f magRef_ ;
 
     // GPS Stuff
-    std::array<double,3> referenceECEFPosition_ {NAN,NAN,NAN}; //Double to handle large value
-    Rotation ECEF2NED_ = std::array<float,9>{NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN,NAN}; //Replace with rotation matrix class
-    float referencePressure_ {NAN};
-    double referenceLatitude_ {NAN}; //From GPS Calibration
-    double referenceLongitude_ {NAN}; //From GPS Calibration
+    std::array<double,3> referenceECEFPosition_ ; //Double to handle large value
+    Rotation ECEF2NED_ ; 
+    float referencePressure_ ;
+    double referenceLatitude_ ; //From GPS Calibration
+    double referenceLongitude_; //From GPS Calibration
+    double referenceAltitude_ = 0; //Defaults to 0 since altimeter reference is a little unreliable for absolute magnitudes. Can use setGPSReferenceAltitude() to change
 
     //Bools / Flags
     bool startUpBool_ = false;

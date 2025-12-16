@@ -3,61 +3,58 @@
 
 ESKF::ESKF(std::array<float,3> p0, std::array<float,3> v0, std::array<float,4> q0, std::array<float,3> ba0, std::array<float,3> bg0, std::array<float,3> bm0,     //Initial Nominal States
             std::array<float,324> P0,                                                              //Error State Covariance
-            float dt,
             float sig_acc, float sig_gyro, float eta_acc, float eta_gyro, float eta_mag,       //Process Noise
             float sig_m, float sig_tilt, float sig_alt, float sig_gps_pos, float sig_gps_vel):
             p_k(p0), v_k(v0), q_k(q0), w_k (std::array<float,3>{0,0,0}), ba_k(ba0), bg_k(bg0), bm_k(bm0),
-            P_k(P0), dt_(dt),
+            P_k(P0),
             sigAcc_(sig_acc), sigGyro_(sig_gyro), etaAcc_(eta_acc), etaGyro_(eta_gyro), etaMag_(eta_mag),
             sigMag_(sig_m), sigTilt_(sig_tilt), sigAlt_(sig_alt), sigGPSPos_(sig_gps_pos), sigGPSVel_(sig_gps_vel)
-            {
-                this->initQd(this->dt_); //Get the discrete Process Noise covariance
-            }; 
+            {}; 
 
 
 //Drone Sim has this in a symbolic form. Verify with that. Can also verify with Marley Paper
-void ESKF::initQd(float dt) {
+Matrix18f ESKF::getQd(float dt) {
     float sigAcc2 = this->sigAcc_ * this->sigAcc_;
     float sigGyro2 = this->sigGyro_ * this->sigGyro_;
     float etaAcc2 = this->etaAcc_ * this -> etaAcc_;
     float etaGyro2 = this->etaGyro_ * this->etaGyro_;
     float etaMag2 = this->etaMag_ * this->etaMag_;
-    float t = this->dt_;
-    float t2 = t*t;
-    float t3 = t2*t;
+    float t2 = dt*dt;
+    float t3 = t2*dt;
 
     //1. Zero out Qd
-    this->Qd_.setZero();
-
+    Matrix18f Qd;
+    Qd.setZero();
 
     // --- Position & velocity blocks ---
-    Qd_(0,0) = sigAcc2*t3/3.0f;   Qd_(0,3) = sigAcc2*t2/2.0f;        
-    Qd_(1,1) = sigAcc2*t3/3.0f;   Qd_(1,4) = sigAcc2*t2/2.0f;      
-    Qd_(2,2) = sigAcc2*t3/3.0f;   Qd_(2,5) = sigAcc2*t2/2.0f;      
-    Qd_(3,0) = sigAcc2*t2/2.0f;   Qd_(3,3) = sigAcc2*dt + etaAcc2*t3/3.0f;   Qd_(3,12) = -etaAcc2*t2/2.0f; Qd_(3,12) = -etaAcc2*t2/2.0f; 
-    Qd_(4,1) = sigAcc2*t2/2.0f;   Qd_(4,4) = sigAcc2*dt + etaAcc2*t3/3.0f;   Qd_(4,13) = -etaAcc2*t2/2.0f;
-    Qd_(5,2) = sigAcc2*t2/2.0f;   Qd_(5,5) = sigAcc2*dt + etaAcc2*t3/3.0f;   Qd_(5,14) = -etaAcc2*t2/2.0f;
+    Qd(0,0) = sigAcc2*t3/3.0f;   Qd(0,3) = sigAcc2*t2/2.0f;        
+    Qd(1,1) = sigAcc2*t3/3.0f;   Qd(1,4) = sigAcc2*t2/2.0f;      
+    Qd(2,2) = sigAcc2*t3/3.0f;   Qd(2,5) = sigAcc2*t2/2.0f;      
+    Qd(3,0) = sigAcc2*t2/2.0f;   Qd(3,3) = sigAcc2*dt + etaAcc2*t3/3.0f;   Qd(3,12) = -etaAcc2*t2/2.0f; Qd(3,12) = -etaAcc2*t2/2.0f; 
+    Qd(4,1) = sigAcc2*t2/2.0f;   Qd(4,4) = sigAcc2*dt + etaAcc2*t3/3.0f;   Qd(4,13) = -etaAcc2*t2/2.0f;
+    Qd(5,2) = sigAcc2*t2/2.0f;   Qd(5,5) = sigAcc2*dt + etaAcc2*t3/3.0f;   Qd(5,14) = -etaAcc2*t2/2.0f;
 
     // --- Alpha blocks ---
-    Qd_(6,6) = sigGyro2*dt + etaGyro2*t3/3.0f;   Qd_(6,15) = -etaGyro2*t2/2.0f;   
-    Qd_(7,7) = sigGyro2*dt + etaGyro2*t3/3.0f;   Qd_(7,16) = -etaGyro2*t2/2.0f;  
-    Qd_(8,8) = sigGyro2*dt + etaGyro2*t3/3.0f;   Qd_(8,17) = -etaGyro2*t2/2.0f;   
+    Qd(6,6) = sigGyro2*dt + etaGyro2*t3/3.0f;   Qd(6,15) = -etaGyro2*t2/2.0f;   
+    Qd(7,7) = sigGyro2*dt + etaGyro2*t3/3.0f;   Qd(7,16) = -etaGyro2*t2/2.0f;  
+    Qd(8,8) = sigGyro2*dt + etaGyro2*t3/3.0f;   Qd(8,17) = -etaGyro2*t2/2.0f;   
     
     // Accelerometer Bias block --
-    Qd_(9,3) = -etaAcc2*t2/2.0f;   Qd_(9,9) = etaAcc2*dt;
-    Qd_(10,4) = -etaAcc2*t2/2.0f;   Qd_(10,10) = etaAcc2*dt;
-    Qd_(11,5) = -etaAcc2*t2/2.0f;   Qd_(11,11) = etaAcc2*dt;
+    Qd(9,3) = -etaAcc2*t2/2.0f;   Qd(9,9) = etaAcc2*dt;
+    Qd(10,4) = -etaAcc2*t2/2.0f;   Qd(10,10) = etaAcc2*dt;
+    Qd(11,5) = -etaAcc2*t2/2.0f;   Qd(11,11) = etaAcc2*dt;
 
     // Gyro Bias Block
-    Qd_(12,6) = -etaGyro2*t2/2.0f;   Qd_(12,12) = etaGyro2*dt;
-    Qd_(13,7) = -etaGyro2*t2/2.0f;   Qd_(13,13) = etaGyro2*dt;
-    Qd_(14,8) = -etaGyro2*t2/2.0f;   Qd_(14,14) = etaGyro2*dt;
+    Qd(12,6) = -etaGyro2*t2/2.0f;   Qd(12,12) = etaGyro2*dt;
+    Qd(13,7) = -etaGyro2*t2/2.0f;   Qd(13,13) = etaGyro2*dt;
+    Qd(14,8) = -etaGyro2*t2/2.0f;   Qd(14,14) = etaGyro2*dt;
 
     // --- Magnetometer bias block ---
-    Qd_(15,15) = etaMag2*dt;
-    Qd_(16,16) = etaMag2*dt;
-    Qd_(17,17) = etaMag2*dt;
+    Qd(15,15) = etaMag2*dt;
+    Qd(16,16) = etaMag2*dt;
+    Qd(17,17) = etaMag2*dt;
 
+    return Qd;
     // //Using the Process Noise 1-sigma, initialize the 18 x 18 covariance 
     // this->Qd_ = std::array<float,324> {sigAcc2*t3/3,            0,            0,               sigAcc2*t2/2,                          0,                          0,                            0,                            0,                            0,             0,             0,             0,              0,              0,               0,         0,         0,         0,
     //                                                0, sigAcc2*t3/3,            0,                          0,               sigAcc2*t2/2,                          0,                            0,                            0,                            0,             0,             0,             0,              0,              0,               0,         0,         0,         0,     
@@ -195,109 +192,125 @@ Matrix18f ESKF::getSTM(const Quaternion& q, const Vector3f& accelBias,  const Ve
 
 void ESKF::propagateCovariance(const Quaternion& q, const Vector3f& accelBias,  const Vector3f& gyroBias, const Vector3f& accelMeas, const Vector3f& gyroMeas, const float dt ) {
     Matrix18f STM = this->getSTM(q, accelBias, gyroBias, accelMeas,gyroMeas, dt);
-
+    Matrix18f Qd = this-> getQd(dt);
     //Can probably take advantage of the sparity of the matrices here to speed things up significantly (see update step)
-    this->P_k = (STM * this -> P_k) * STM.transpose() + this->Qd_; 
+    this->P_k = (STM * this -> P_k) * STM.transpose() + Qd; 
 }
 
 
-void ESKF::step(std::array<float,14> z) {
-    //Unpack Measurements
-    Vector3f accelMeas(z[0],z[1],z[2]); //Raw measurement, Bias Uncompensated, Body Frame
-    Vector3f gyroMeas(z[3], z[4], z[5]); //Raw Measurement, Bias Uncompensated, Body Frame
-    Vector3f magMeas(z[6], z[7], z[8]); //Raw Measurement, Soft / Hard Iron calibrated, Reference to True North, Body Frame
-    float altMeas = z[9];              //Raw Measuremen, height in D
-    std::array<float,4> gpsMeas {z[10],z[11],z[12],z[13]}; // Raw Measurement, Postion and Velocity in NE
-    Vector3f tiltMeas (NAN, NAN, NAN);
+// void ESKF::step(std::array<float,14> z) {
+//     //Unpack Measurements
+//     Vector3f accelMeas(z[0],z[1],z[2]); //Raw measurement, Bias Uncompensated, Body Frame
+//     Vector3f gyroMeas(z[3], z[4], z[5]); //Raw Measurement, Bias Uncompensated, Body Frame
+//     Vector3f magMeas(z[6], z[7], z[8]); //Raw Measurement, Soft / Hard Iron calibrated, Reference to True North, Body Frame
+//     float altMeas = z[9];              //Raw Measuremen, height in D
+//     std::array<float,4> gpsMeas {z[10],z[11],z[12],z[13]}; // Raw Measurement, Postion and Velocity in NE
+//     Vector3f tiltMeas (NAN, NAN, NAN);
 
-    //Decide if we have low enough acceleration to use the accelerometer as a tilt sensor
-    if (std::fabs( (accelMeas-this->ba_k).getMag() - CONSTANTS::g0)<0.5) { //Raw Accelerometer measurement should be measuring -g in NED / body frame if we don't have acceleration. Threshold is only twice that of the noise ceiling. May need a low pas filter 
-        tiltMeas = (accelMeas-this->ba_k).normalize();
+//     //Decide if we have low enough acceleration to use the accelerometer as a tilt sensor
+//     if (std::fabs( (accelMeas-this->ba_k).getMag() - CONSTANTS::g0)<0.5) { //Raw Accelerometer measurement should be measuring -g in NED / body frame if we don't have acceleration. Threshold is only twice that of the noise ceiling. May need a low pas filter 
+//         tiltMeas = (accelMeas-this->ba_k).normalize();
+//     }
+
+
+//     // If both IMU meas has values, proceed
+//     // Else something has gone wrong. Skip this step part and increment some sort of counter. If this happens X times, go into some sort of safety mode
+//     this->predict(accelMeas, gyroMeas);
+
+
+//     //Perform Update only if there is at least one measurement avaliable.
+//     if (!isnan(magMeas[0]) || !isnan(tiltMeas[0]) || !isnan(altMeas) || !isnan(gpsMeas[0])) {
+//         this->update(magMeas,tiltMeas, altMeas, gpsMeas);
+//     };
+
+//     //Update the body rate estimate
+//     this->w_k = gyroMeas - this->bg_k;
+// }
+
+void ESKF::predict(const std::array<float,6> imuMeas, uint32_t now) {
+
+    if (!lastFilterTimeInitialized) {
+        lastFilterTime = now;  // set the initial timestamp
+        lastFilterTimeInitialized = true;
+    } else {
+        Vector3f accelMeas (imuMeas[0], imuMeas[1], imuMeas[2]);
+        Vector3f gyroMeas (imuMeas[3], imuMeas[4], imuMeas[5]);
+        //Extract out all previous values
+        Quaternion q_temp = this->q_k;
+        Vector3f v_temp = this->v_k;
+        Vector3f ba_temp = this->ba_k;
+        Vector3f bg_temp = this->bg_k;
+
+        float dt = (now - this->lastFilterTime) / 1000; // Convert milliseconds into seconds here
+
+        //1. Propagate the Error State Covariance Forward in time 
+        // Propagate this first since STMs are dependent on state, so want to calculate this BEFORE prediction
+        this->propagateCovariance(q_temp, ba_temp, bg_temp, accelMeas, gyroMeas, dt); 
+
+        //2. Propagate Nominal State forward in time using IMU measurements (NO UPDATES TO BIAS)
+        Vector3f estAccelMeas = q2R(q_temp).transpose() * (accelMeas - ba_temp) + Vector3f(0.0f,0.0f,CONSTANTS::g0); // Rotate Accelerometer reading into Inertial frame, add back in Inertial gravity in NED to get Coordinate acceleration
+        Vector3f estGyroMeas = gyroMeas - bg_temp; // This is w_est
+
+        this->p_k += (v_temp*dt) + (0.5f * estAccelMeas) * (dt*dt); //pk = pk + vk*dt * 0.5* (ak) *dt^2     
+        this->v_k += estAccelMeas * dt;                           //vk = vk + ak*dt
+        this->q_k += 0.5f * quatProp(estGyroMeas, q_temp) * dt; //qk = q_k + 0.5 * w x qk * dt = q_k + q_dot*dt
+        this->q_k.normalize();
+
+        lastFilterTime = now;
     }
 
-
-    // If both IMU meas has values, proceed
-    // Else something has gone wrong. Skip this step part and increment some sort of counter. If this happens X times, go into some sort of safety mode
-    this->predict(accelMeas, gyroMeas);
-
-
-    //Perform Update only if there is at least one measurement avaliable.
-    if (!isnan(magMeas[0]) || !isnan(tiltMeas[0]) || !isnan(altMeas) || !isnan(gpsMeas[0])) {
-        this->update(magMeas,tiltMeas, altMeas, gpsMeas);
-    };
-
-    //Update the body rate estimate
-    this->w_k = gyroMeas - this->bg_k;
 }
 
-void ESKF::predict(const Vector3f& accelMeas, const Vector3f& gyroMeas) {
+void ESKF::predictRegressionTest(const std::array<float,6> imuMeas, float dt){
+
+    Vector3f accelMeas (imuMeas[0], imuMeas[1], imuMeas[2]);
+    Vector3f gyroMeas (imuMeas[3], imuMeas[4], imuMeas[5]);
     //Extract out all previous values
     Quaternion q_temp = this->q_k;
     Vector3f v_temp = this->v_k;
     Vector3f ba_temp = this->ba_k;
     Vector3f bg_temp = this->bg_k;
-    float dt_temp = this->dt_;
 
     //1. Propagate the Error State Covariance Forward in time 
     // Propagate this first since STMs are dependent on state, so want to calculate this BEFORE prediction
-    this->propagateCovariance(q_temp, ba_temp, bg_temp, accelMeas, gyroMeas, dt_temp); 
+    this->propagateCovariance(q_temp, ba_temp, bg_temp, accelMeas, gyroMeas, dt); 
 
     //2. Propagate Nominal State forward in time using IMU measurements (NO UPDATES TO BIAS)
     Vector3f estAccelMeas = q2R(q_temp).transpose() * (accelMeas - ba_temp) + Vector3f(0.0f,0.0f,CONSTANTS::g0); // Rotate Accelerometer reading into Inertial frame, add back in Inertial gravity in NED to get Coordinate acceleration
     Vector3f estGyroMeas = gyroMeas - bg_temp; // This is w_est
 
-    this->p_k += (v_temp*dt_temp) + (0.5f * estAccelMeas) * (dt_temp*dt_temp); //pk = pk + vk*dt * 0.5* (ak) *dt^2     
-    this->v_k += estAccelMeas * dt_temp;                           //vk = vk + ak*dt
-    this->q_k += 0.5f * quatProp(estGyroMeas, q_temp) * dt_temp; //qk = q_k + 0.5 * w x qk * dt = q_k + q_dot*dt
+    this->p_k += (v_temp*dt) + (0.5f * estAccelMeas) * (dt*dt); //pk = pk + vk*dt * 0.5* (ak) *dt^2     
+    this->v_k += estAccelMeas * dt;                           //vk = vk + ak*dt
+    this->q_k += 0.5f * quatProp(estGyroMeas, q_temp) * dt; //qk = q_k + 0.5 * w x qk * dt = q_k + q_dot*dt
     this->q_k.normalize();
 
+    //3. Update best estimate of body rates
+    this->w_k = gyroMeas - bg_temp;
+    
 }
+
+
 
 // See Marley EKF Paper for Nonspinning Guided Missles. If all measurements are uncorrelated (which is the assumption here, the R matrix is diagonal for everything)
 // Then the measurements can be processed one at a time with identical results to processing them all at once. Reduces computational speed since there isn't a need for matrix inversion
-void ESKF::update(const Vector3f& magMeas, const Vector3f& tiltMeas, const float& altMeas,const std::array<float,4>& gpsMeas) {
-    std::array<float,18> del_xk {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f };
-    Matrix18f&P_temp = this->P_k;
-    // WIll pass these by reference so each function overwrites the same exisiting address
-    std::array<float,18> K;
-    std::array<float,18> P_row;
+void ESKF::updateTiltMeas(const std::array<float,3> accelMeas) {
+    // Calculate Tilt
+    //Decide if we have low enough acceleration to use the accelerometer as a tilt sensor
+    Vector3f accelMeasVec(accelMeas);
+    if (std::fabs( (accelMeasVec-this->ba_k).getMag() - CONSTANTS::g0)<0.5) { //Raw Accelerometer measurement should be measuring -g in NED / body frame if we don't have acceleration. Threshold is only twice that of the noise ceiling. May need a low pas filter 
+        std::array<float,18> K; //Kalman Gain
+        std::array<float,18> P_row; //Row of Covariance for this update
+        
+        if (!this->updateFlag) {
+            updateFlag = true; //Keeps track of whether this is the first update of the loop
+        }
 
-    //Check if we have a valid magnetometer update (Yaw)
-    if (!isnan(magMeas[0])) {
-        // 0. Store relevant variable 
-        float sigMag2 = this->sigMag_ * this->sigMag_; 
-
-        // Normalize measurement such that it is a unit vector
-        Vector3f measOrientation = magMeas.normalize();
-
-
-        // 1. Create Observation Matrix H and observation model h(x). Suppose to be...
-        // H = [zeros(3,6), skew(q2R(q_k)*[1;0;0]), zeros(3,6), eye(3)]
-        // Split it up into 3 vectors to perform sequential updates 
-        Vector3f hx = q2R(this->q_k) * this->magRef_;
-        Rotation skew_RVec = skew(hx);
-
-        // 2. Sequentially update each component
-        // Update Row 1: H1 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f }; 
-        // Index bias -> 15
-        this->scalarMagTiltUpdate(15, skew_RVec[0], skew_RVec[1], skew_RVec[2], measOrientation[0], hx[0],sigMag2, P_temp, del_xk, K, P_row);
-
-        // Update Row 2: H2 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[3], skew_RVec[4], skew_RVec[5], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f }; 
-        // Index bias -> 16
-        this->scalarMagTiltUpdate(16, skew_RVec[3], skew_RVec[4], skew_RVec[5], measOrientation[1], hx[1],sigMag2, P_temp, del_xk, K, P_row);
-
-        // Update Row 3: H3 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[6], skew_RVec[7], skew_RVec[8], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f }; 
-        // Index bias -> 17
-        this->scalarMagTiltUpdate(17, skew_RVec[6], skew_RVec[7], skew_RVec[8], measOrientation[2], hx[2],sigMag2, P_temp, del_xk, K, P_row);
-    }
-    
-    // Check if we have a valid tilt measurement (roll / pitch)
-    if (!isnan(tiltMeas[0])) {
+        //Start Processing 
         // 0. Store relevant variable 
         float sigTilt2 = this->sigTilt_ * this->sigTilt_; 
 
         // Normalize measurement such that it is a unit vector
-        Vector3f measOrientation = tiltMeas;
+        Vector3f measOrientation = (accelMeasVec-this->ba_k).normalize(); //Note that this is the TILT vector
 
         // 1. Create Observation Matrix H and observation model h(x). Suppose to be...
         // H = [zeros(3,6), skew(q2R(q_k)*[0;0;1]), eye(3), zeros(3,6)]
@@ -308,63 +321,110 @@ void ESKF::update(const Vector3f& magMeas, const Vector3f& tiltMeas, const float
         // 2. Sequentially update each component
         // Update Row 1: H1 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2], 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }; 
         // Index bias -> 9
-        this->scalarMagTiltUpdate(9, skew_RVec[0], skew_RVec[1], skew_RVec[2], measOrientation[0], hx[0],sigTilt2, P_temp, del_xk, K, P_row);
+        this->scalarMagTiltUpdate(9, skew_RVec[0], skew_RVec[1], skew_RVec[2], measOrientation[0], hx[0],sigTilt2, this->P_k, this->del_xk, K, P_row);
 
         // Update Row 2: H2 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2], 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }; 
         // Index bias -> 10
-        this->scalarMagTiltUpdate(10, skew_RVec[3], skew_RVec[4], skew_RVec[5], measOrientation[1], hx[1],sigTilt2, P_temp, del_xk, K, P_row);
+        this->scalarMagTiltUpdate(10, skew_RVec[3], skew_RVec[4], skew_RVec[5], measOrientation[1], hx[1],sigTilt2, this->P_k, this->del_xk, K, P_row);
 
         // Update Row 3: H3 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2], 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }; 
         // Index bias -> 11
-        this->scalarMagTiltUpdate(11, skew_RVec[6], skew_RVec[7], skew_RVec[8], measOrientation[2], hx[2],sigTilt2, P_temp, del_xk, K, P_row);
-
+        this->scalarMagTiltUpdate(11, skew_RVec[6], skew_RVec[7], skew_RVec[8], measOrientation[2], hx[2],sigTilt2, this->P_k, this->del_xk, K, P_row);
     }
-
-    // Check if we have a valid GPS measurement
-    if (!isnan(gpsMeas[0])) {
-        
-        // 0. Store relevant variables
-        float sigGPSPos2 = this->sigGPSPos_ * this->sigGPSPos_;
-        float sigGPSVel2 = this->sigGPSVel_ * this->sigGPSVel_;
-
-        // 1. Update North Position
-        // H = [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the first row / col --> idx = 0
-        this->scalarGPSAltUpdate( 0, gpsMeas[0], this->p_k[0], sigGPSPos2,  P_temp, del_xk, K, P_row); // Update 
-
-        // 2. Update East Position
-        // H = [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the second row / col --> idx = 1
-        this->scalarGPSAltUpdate( 1, gpsMeas[1], this->p_k[1], sigGPSPos2,  P_temp, del_xk, K, P_row); // Update 
-
-        // 3. Update North Velocity
-        // H = [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the fourth row / col --> idx = 3
-        this->scalarGPSAltUpdate( 3, gpsMeas[2], this->v_k[0], sigGPSVel2,  P_temp, del_xk, K, P_row);  
-
-        // 4. Update East Velocity
-        // H = [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the fifth row / col --> idx = 4
-        this->scalarGPSAltUpdate( 4, gpsMeas[3], this->v_k[1], sigGPSVel2,  P_temp, del_xk, K, P_row); 
-
-    }
-
-    //Check if we have a valid altimeter measurement 
-    if (!isnan(altMeas)) {
-        // 0. Store relevant variables
-        float sigAlt2 = this->sigAlt_ * this->sigAlt_;
-
-        // 1. Update Down Position
-        // H = [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the third row / col --> idx = 2
-        this->scalarGPSAltUpdate( 2, -altMeas, this->p_k[2], sigAlt2,  P_temp, del_xk, K, P_row);  //Negative alt meas for DOWN 
-    }
-
-
-
-    // After going through each measurement, inject the error state
-    this->injectError(del_xk);
-
-    // Update Covariance
-    this->P_k = P_temp;
 
 }
 
+
+void ESKF::updateMagMeas(const std::array<float,3> magMeas) {
+
+    Vector3f magMeasVec(magMeas);
+ 
+    std::array<float,18> K; //Kalman Gain
+    std::array<float,18> P_row; //Row of Covariance for this update
+    
+    if (!this->updateFlag) {
+        updateFlag = true; //Keeps track of whether this is the first update of the loop
+    }
+
+    //Start Processing 
+    // 0. Store relevant variable 
+    float sigMag2 = this->sigMag_ * this->sigMag_; 
+
+    // Normalize measurement such that it is a unit vector
+    Vector3f measOrientation = magMeasVec.normalize();
+
+
+    // 1. Create Observation Matrix H and observation model h(x). Suppose to be...
+    // H = [zeros(3,6), skew(q2R(q_k)*[1;0;0]), zeros(3,6), eye(3)]
+    // Split it up into 3 vectors to perform sequential updates 
+    Vector3f hx = q2R(this->q_k) * this->magRef_;
+    Rotation skew_RVec = skew(hx);
+
+    // 2. Sequentially update each component
+    // Update Row 1: H1 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f }; 
+    // Index bias -> 15
+    this->scalarMagTiltUpdate(15, skew_RVec[0], skew_RVec[1], skew_RVec[2], measOrientation[0], hx[0],sigMag2, this->P_k, this->del_xk, K, P_row);
+
+    // Update Row 2: H2 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[3], skew_RVec[4], skew_RVec[5], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f }; 
+    // Index bias -> 16
+    this->scalarMagTiltUpdate(16, skew_RVec[3], skew_RVec[4], skew_RVec[5], measOrientation[1], hx[1],sigMag2, this->P_k, this->del_xk, K, P_row);
+
+    // Update Row 3: H3 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[6], skew_RVec[7], skew_RVec[8], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f }; 
+    // Index bias -> 17
+    this->scalarMagTiltUpdate(17, skew_RVec[6], skew_RVec[7], skew_RVec[8], measOrientation[2], hx[2],sigMag2, this->P_k, this->del_xk, K, P_row);
+
+}
+
+void ESKF::updateAltMeas(const float altMeas) {
+
+    std::array<float,18> K; //Kalman Gain
+    std::array<float,18> P_row; //Row of Covariance for this update
+    
+    if (!this->updateFlag) {
+        updateFlag = true; //Keeps track of whether this is the first update of the loop
+    }
+
+    //Start Processing 
+    // 0. Store relevant variables
+    float sigAlt2 = this->sigAlt_ * this->sigAlt_;
+
+    // 1. Update Down Position
+    // H = [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the third row / col --> idx = 2
+    this->scalarGPSAltUpdate( 2, -altMeas, this->p_k[2], sigAlt2,  this->P_k, this->del_xk, K, P_row);  //Negative alt meas for DOWN 
+
+}
+
+void ESKF::updateGPSMeas(const std::array<float,4> gpsMeas) {
+
+    std::array<float,18> K; //Kalman Gain
+    std::array<float,18> P_row; //Row of Covariance for this update
+    
+    if (!this->updateFlag) {
+        updateFlag = true; //Keeps track of whether this is the first update of the loop
+    }
+
+    //Start Processing 
+    // 0. Store relevant variables
+    float sigGPSPos2 = this->sigGPSPos_ * this->sigGPSPos_;
+    float sigGPSVel2 = this->sigGPSVel_ * this->sigGPSVel_;
+
+    // 1. Update North Position
+    // H = [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the first row / col --> idx = 0
+    this->scalarGPSAltUpdate( 0, gpsMeas[0], this->p_k[0], sigGPSPos2,  this->P_k, this->del_xk, K, P_row); // Update 
+
+    // 2. Update East Position
+    // H = [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the second row / col --> idx = 1
+    this->scalarGPSAltUpdate( 1, gpsMeas[1], this->p_k[1], sigGPSPos2,  this->P_k, this->del_xk, K, P_row); // Update 
+
+    // 3. Update North Velocity
+    // H = [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the fourth row / col --> idx = 3
+    this->scalarGPSAltUpdate( 3, gpsMeas[2], this->v_k[0], sigGPSVel2,  this->P_k, this->del_xk, K, P_row);  
+
+    // 4. Update East Velocity
+    // H = [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the fifth row / col --> idx = 4
+    this->scalarGPSAltUpdate( 4, gpsMeas[3], this->v_k[1], sigGPSVel2,  this->P_k, this->del_xk, K, P_row); 
+
+}
 
 void ESKF::setMagRef(Vector3f magRef) {
     this->magRef_ = magRef.normalize();

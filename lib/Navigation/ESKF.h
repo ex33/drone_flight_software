@@ -20,8 +20,6 @@ public:
      * 
      * @param P0 Initial ERROR State Covariance for Kalman filter [324 x 1] (18x18)
      * 
-     * @param dt Ideal Filter Timestep.
-     * 
      * @param sig_acc 1-Sigma Random Disturbance from Accelerometer [PROCESS NOISE]
      * @param sig_gyro 1-Sigma Random Disturbance from Gyro [PROCESS NOISE]
      * @param eta_acc 1-Sigma Random Disturbance to Accelerometer Bias [PROCESS NOISE]
@@ -39,19 +37,18 @@ public:
      */
     ESKF(std::array<float,3> p0, std::array<float,3> v0, std::array<float,4> q0, std::array<float,3> ba0, std::array<float,3> bg0, std::array<float,3> bm0,     //Initial Nominal States
         std::array<float,324> P0,                                                                   //Error State Covariance
-        float dt,                                                                              // Filter Timestep
         float sig_acc, float sig_gyro, float eta_acc, float eta_gyro, float eta_mag,       //Process Noise
         float sig_m, float sig_tilt, float sig_alt, float sig_gps_pos, float sig_gps_vel); //Measurement Noise
 
     /**
      * @brief Init Discrete Process Noise Matrix
      * 
-     * @param dt Nominal Timestep for Filter
+     * @param dt Timestep for Prediction
      *
      * Follows Marley's version of the Process Noise Matrix. Qd = int ( STM * Q * STM'), where Q is E[(Gw) * (Gw)'], where Gw is x_k1 = Fxk + Gw from the dynamics
      * STM is linearized about the identity quaternion and 0 acceleration / rates, which works out to our hover state
      */
-    void initQd(float dt); //Might be able to calculate this every timestep if not too computationally expensive.
+    Matrix18f getQd(float dt); //Might be able to calculate this every timestep if not too computationally expensive.
 
     /**
      * @brief Return the Discrete Time State Transition Matrix
@@ -84,15 +81,26 @@ public:
      * @brief Calls on propagateCovaraince along with propagating state estimate forward via Euler Integration
      * 
 
-     * @param accelMeas Raw Accelerometer Reading
-     * @param gyroMeas Raw Gyro Reading
+     * @param imuMeas
+     * @param now 
      *
      */
-    void predict(const Vector3f& accelMeas, const Vector3f& gyroMeas);
+    void predict(const std::array<float,6> imuMeas, uint32_t now);
 
+    /**
+     * @brief Overload for providing a specific timestep of propagation (mostly for regression testing)
+     * 
 
-    void update(const Vector3f& magMeas, const Vector3f& tiltMeas, const float& altMeas,const std::array<float,4>& gpsMeas);
+     * @param imuMeas
+     * @param dt 
+     *
+     */
+    void predictRegressionTest(const std::array<float,6> imuMeas, float dt);
 
+    void updateTiltMeas(const std::array<float,3> accelMeas);
+    void updateMagMeas(const std::array<float,3> magMeas);
+    void updateAltMeas(const float altMeas);
+    void updateGPSMeas(const std::array<float,4> gpsMeas);
      /**
      * @brief Sequentially updates filter with ONE element of the tilt / magnetometer reading 
      * 
@@ -223,42 +231,40 @@ public:
     }
 
      /**
-     * @brief Inject Error to Update Nominal States
-     * 
-     * @param del_x Error State after using all avaliable measurements
+     * @brief Inject Error to Update Nominal States if there is at least one update. If not, do nothing
      * 
      * This is what takes the estimate from priori to posteriori
      */
-    inline void injectError(const std::array<float,18>& del_x) {
-        // Unpack Errors
-        Vector3f del_p (del_x[0], del_x[1], del_x[2]);
-        Vector3f del_v (del_x[3], del_x[4], del_x[5]);
-        Quaternion del_q (1, 0.5f*del_x[6],  0.5f*del_x[7],  0.5f*del_x[8]); //alpha = 2 * del_q_xyz
-        Vector3f del_ba (del_x[9], del_x[10], del_x[11]);
-        Vector3f del_bg (del_x[12], del_x[13], del_x[14]);
-        Vector3f del_bm (del_x[15], del_x[16], del_x[17]);
- 
-        this->p_k += del_p;
-        this->v_k += del_v;
-        this->q_k = quatMult(del_q, q_k);
-        this->q_k.normalize();
-        this->ba_k += del_ba;
-        this->bg_k += del_bg;
-        this->bm_k += del_bm;
+    inline void injectError() {
+        if (this->updateFlag) {
+            // Unpack Errors
+            Vector3f del_p (this->del_xk[0], this->del_xk[1], this->del_xk[2]);
+            Vector3f del_v (this->del_xk[3], this->del_xk[4], this->del_xk[5]);
+            Quaternion del_q (1, 0.5f*this->del_xk[6],  0.5f*this->del_xk[7],  0.5f*this->del_xk[8]); //alpha = 2 * del_q_xyz
+            Vector3f del_ba (this->del_xk[9], this->del_xk[10], this->del_xk[11]);
+            Vector3f del_bg (this->del_xk[12], this->del_xk[13], this->del_xk[14]);
+            Vector3f del_bm (this->del_xk[15], this->del_xk[16], this->del_xk[17]);
+            
+            //Update States
+            this->p_k += del_p;
+            this->v_k += del_v;
+            this->q_k = quatMult(del_q, q_k);
+            this->q_k.normalize();
+            this->ba_k += del_ba;
+            this->bg_k += del_bg;
+            this->bm_k += del_bm;
+            
+            this->w_k -= del_bg; // Update for body rates: gyro_meas - (bias_updated) = gyro_meas - (bias_old + del_bg) = old_w_k - del_bg
+
+
+            //Reset error states
+            this->del_xk = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f };
+            updateFlag = false;
+        }
 
     };
 
 
-    /**
-     * @brief Runs 1 Loop of the filter (Propagate + Update)
-     * 
-
-     * @param z Proceesed Sensor Measurements (Accelerometer, Gyro, Magnetometer, Altimeter, GPS). 
-     *
-     * Note: Tile Handled in update()
-     */
-    void step(std::array<float,14> z);
-    
     
     /**
      * @brief Set the Magnetometer Reference Vector
@@ -299,9 +305,6 @@ public:
         return this->Qd_;
     };
 
-    inline float getDt() const {
-        return this -> dt_;
-    }
 
     inline float getSigAcc() const {
         return this -> sigAcc_;
@@ -357,8 +360,6 @@ private:
     
     Matrix18f P_k; //This is the covariance of the ERROR State
 
-    float dt_;
-
     //Process Noise
     Matrix18f Qd_;
 
@@ -374,9 +375,17 @@ private:
     float sigGPSPos_;
     float sigGPSVel_;
 
+    // Error state
+    std::array<float,18> del_xk {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f };
+
     //Mag Ref
     Vector3f magRef_;
 
+    // Prediction and Update Flags/Tokens
+    bool lastFilterTimeInitialized = false; //Ensures that we don't predict the very first loop and just have updates
+    uint32_t lastFilterTime; //General time that gets set after each prediction and update, in case measurements wants to be processed seperately
+
+    bool updateFlag; 
 
 };
 #endif // ESKF_H

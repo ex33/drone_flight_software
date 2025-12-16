@@ -8,150 +8,9 @@ gps_(&serialGPS) //Initializer list, initializes at same time as sensor object
     freqMag_ = CONSTANTS::seconds2micro/freqMag;
     freqAlt_ = CONSTANTS::seconds2micro/freqMag;
     freqGPS_ = CONSTANTS::seconds2micro/freqGPS;
+    
 };
 // -------------------------- All Sensors Functions ------------------------------
-void Sensors::updateMeasurements () {
-    //Get current Time
-    unsigned long now = micros(); 
-
-    //Update each sensor measurements
-    this->currIMUMeas_ = getIMUMeas(now);
-    this->currMagMeas_ = getMagMeas(now);
-    this->currAltMeas_ = getAltMeas(now);
-    if (this->gpsFix_ && this->gpsFlag_){ //If we have a gps fix AND are running the GPS
-        this->currGPSMeas_ = getGPSMeas(now);
-    }
-};
-
-std::array<float,14> Sensors::getMeasurements() {
-    // Returns the measurement vector z, where..
-    // z[0]-z[2] is Accelerometer Reading in BODY Frame
-    // z[3]-z[5] is Gyro Reading in BODY Frame
-    // z[6]-z[8] is Magnetometer Reading in BODY Frame
-    // z[9] is the Altimeter Reading 
-    // z[10]-z[13] is the GPS Reading 
-    std::array<float,14> z;
-    Vector3f accelBody;
-    Vector3f gyroBody;
-    Vector3f magBody;
-    float altHeight;
-    std::array<float,4> gpsNEPosVel; //Only need the NE position and velocity
-
-    // Update all sensors
-    this->updateMeasurements();
-
-    // Get IMU Measurements, convert from Sensor to Body frame
-    if (!isnan(this->currIMUMeas_[0])) {
-        accelBody = this->rotBody2IMU_.transpose() * Vector3f(this->currIMUMeas_[0],this->currIMUMeas_[1],this->currIMUMeas_[2]);
-        gyroBody = this->rotBody2IMU_.transpose() * Vector3f(this->currIMUMeas_[3],this->currIMUMeas_[4],this->currIMUMeas_[5]);
-
-    } else {
-        accelBody = Vector3f(NAN, NAN, NAN); // Save on computation if there is no measurement
-        gyroBody = Vector3f(NAN, NAN, NAN); // Save on computation if there is no measurement
-    }
-
-    // Get Magnetometer Reading
-    //Apply Soft and Hard Iron calibration, and Rotate into body frame and adjusts for declination and inclination
-    if (!isnan(this->currMagMeas_[0])) {
-        magBody = this->rotBody2Mag_.transpose() * this->magSoftIron_*(Vector3f(this->currMagMeas_) - this->magHardIron_); // Raw measurement
-
-        // Normalization Handled in ESKF
-    } else {
-        magBody = Vector3f(NAN, NAN, NAN);
-    }
-
-    if (!isnan(this->currAltMeas_)) {
-        //altBody = -(this->currAltMeas_ - this->referenceAltitude_); //Negative for DOwn
-        
-        // // If our current Altimeter Measurement is within the expected absolute error for the pressure measurement, then update it
-        // // Causes an issue where if we are hovering within this region, it'll try to adjust for that hover state. Should pass in a flag here for when we are idling (i.e. on the ground, vs in mission mode)
-        // if (fabs(this->currAltMeas_-this->referencePressure_)<0.5) { //Absolute pressure up to 0.5 hPA
-
-        //     this->referencePressure_ = (0.995) * this->referencePressure_ + 0.005 * this->currAltMeas_;
-        // }
-
-        altHeight = 44330 * (1- pow(this->currAltMeas_/this->referencePressure_,0.1903));
-
-        // Gate it to account for difference in reference Pressure at the start. If we are getting negative values, we are basically at rest
-        if (altHeight < 0) {
-            altHeight = 0; 
-        }
-    } else {
-        altHeight = NAN;
-    }
-
-    // Get the GPS Measurements
-    // Raw measurements has Lat, Long, Speed, Angle
-    if (!isnan(this->currGPSMeas_[0])) {
-        float v_N = this->currGPSMeas_[2] * cos(this->currGPSMeas_[3] * CONSTANTS::deg2rad);
-        float v_E = this->currGPSMeas_[2] * sin(this->currGPSMeas_[3] * CONSTANTS::deg2rad);
-        Vector3f gpsNEDPos;
-        if (!isnan(this->currAltMeas_)) {
-            gpsNEDPos = this->LLA2NED(this-> currGPSMeas_[0],  //Note that adafruit handles N/S and E/W by returning +/-
-                                    this-> currGPSMeas_[1],
-                                    this-> currAltMeas_);
-        } else {
-            gpsNEDPos = this->LLA2NED(this-> currGPSMeas_[0],  
-                                    this-> currGPSMeas_[1],
-                                    this-> currGPSMeas_[2]); //If for whatever reason, we don't have altimeter reading, then use altitude from GPS
-        }
-        gpsNEPosVel = std::array<float,4>{gpsNEDPos[0],gpsNEDPos[1], v_N, v_E};
-
-    } else {
-        gpsNEPosVel = std::array<float,4>{NAN,NAN,NAN,NAN};
-    }
-    z = {accelBody[0], accelBody[1], accelBody[2],
-        gyroBody[0], gyroBody[1], gyroBody[2],
-        magBody[0], magBody[1], magBody[2],
-        altHeight,  
-        gpsNEPosVel[0],gpsNEPosVel[1],gpsNEPosVel[2],gpsNEPosVel[3]};
-
-    return z;
-}
-
-void Sensors::printMeasurements() {
-    Serial.println("Printing All Measurements . . . ");
-    // Accelerometer
-    Serial.print("Accel (m/s^2): X=");
-    Serial.print(this->currIMUMeas_[0], 6);
-    Serial.print(" Y=");
-    Serial.print(this->currIMUMeas_[1], 6);
-    Serial.print(" Z=");
-    Serial.println(this->currIMUMeas_[2], 6);
-
-    // Gyroscope
-    Serial.print("Gyro (rad/s): X=");
-    Serial.print(this->currIMUMeas_[3], 6);
-    Serial.print(" Y=");
-    Serial.print(this->currIMUMeas_[4], 6);
-    Serial.print(" Z=");
-    Serial.println(this->currIMUMeas_[5], 6);
-
-    // Magnetometer
-    Serial.print("Mag (G): X=");
-    Serial.print(this->currMagMeas_[0], 6);
-    Serial.print(" Y=");
-    Serial.print(this->currMagMeas_[1], 6);
-    Serial.print(" Z=");
-    Serial.println(this->currMagMeas_[2], 6);
-
-    // Altimeter
-    Serial.print("Alt (m): Z=");
-    Serial.println(this->currAltMeas_, 6);
-
-    // GPS 
-    Serial.print("GPS (m, m/s): N=");
-    Serial.print(this->currGPSMeas_[0], 6);
-    Serial.print(" E=");
-    Serial.print(this->currGPSMeas_[1], 6);
-    Serial.print(" Vn=");
-    Serial.print(this->currGPSMeas_[2], 6);
-    Serial.print(" Ve=");
-    Serial.println(this->currGPSMeas_[3], 6);
-    Serial.println("------------------------");
-
-
-};
 
 void Sensors::startUpSensors() {
     //Given default I2C address and I2C bus, check if initilized properly
@@ -339,11 +198,12 @@ void Sensors::calibrateSensors() {
     int ignoreAltMeas = 0; 
 
     while (time_in_static_calibration < 30 * CONSTANTS::seconds2micro) {
-        imuMeas = getIMUMeas(static_calibration_now);
-        altMeas = getAltMeas(static_calibration_now);
-        magMeas = getMagMeas(static_calibration_now);
-        //This if statement is unncessary for IMU but keep here just in case
-        if (!isnan(imuMeas[0])) { //Only need to check the first index since they should all be NaN
+        static_calibration_now = millis();
+        time_in_static_calibration = static_calibration_now - static_calibration_start;
+        // IMU Loop
+        if (this->imuUpdate(static_calibration_now)) {
+            imuMeas = this->getIMUMeas();
+
             imuMeasSum[0] += imuMeas[0];
             imuMeasSum[1] += imuMeas[1];
             imuMeasSum[2] += imuMeas[2];
@@ -351,6 +211,7 @@ void Sensors::calibrateSensors() {
             imuMeasSum[4] += imuMeas[4];
             imuMeasSum[5] += imuMeas[5];
             numIMUMeas += 1;
+
             //Write to file
             imuCalFile.print(time_in_static_calibration);
             imuCalFile.print(",");
@@ -365,10 +226,12 @@ void Sensors::calibrateSensors() {
             imuCalFile.print(imuMeas[4],6);
             imuCalFile.print(",");
             imuCalFile.println(imuMeas[5],6); 
-        }
+        };
 
         // Unlike the other sensors, we MUST use soft/hard iron calibration for the Magnetometer prior to the static calibration step.
-        if (!isnan(magMeas[0])) {
+        if (this->magUpdate(static_calibration_now)) {
+            magMeas = this->getMagMeas();
+
             // Make Measurement into a vector
             Vector3f magMeasVector (magMeas);
             magMeasVector = this->magSoftIron_ * (magMeasVector - this->magHardIron_);
@@ -385,10 +248,11 @@ void Sensors::calibrateSensors() {
             magCalFile.print(magMeasVector[1],6);
             magCalFile.print(",");
             magCalFile.println(magMeasVector[2],6); 
-        }
+        };
 
-        if (!isnan(altMeas)) { 
+        if (this->altUpdate(static_calibration_now)) {
             if (ignoreAltMeas > 500) { //Ignore the first 500 altimeter measurement to let pressure / temperature stabilize
+                altMeas = this->getAltMeas();
                 altMeasSum += altMeas;
                 numAltMeas ++ ;
                 //Write to file
@@ -397,46 +261,38 @@ void Sensors::calibrateSensors() {
                 altCalFile.println(altMeas,6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
             } else {
                 ignoreAltMeas++;
-            }
-            
-        }
+            };
+        };
+
         
         if (this->gpsFlag_) {
-            gpsMeas = getGPSMeas(static_calibration_now);
-            if (!isnan(gpsMeas[0])) {
+            if (this->gpsUpdate(static_calibration_now)) {
+                gpsMeas = this->getGPSMeas();
+  
                 //Only need to sum up Lat/Long. We know speed is zero, and we get altitude from altimeter.
                 gpsMeasSum[0] += gpsMeas[0];
                 gpsMeasSum[1] += gpsMeas[1]; 
                 numGPSMeas++;
 
                 //Write to file
-                //Write to file
                 gpsCalFile.print(time_in_static_calibration);
                 gpsCalFile.print(",");
                 gpsCalFile.print(gpsMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
                 gpsCalFile.print(",");
-                gpsCalFile.print(gpsMeas[1],6);
-                gpsCalFile.print(",");
-                gpsCalFile.print(gpsMeas[2],6); 
-                gpsCalFile.print(",");
-                gpsCalFile.println(gpsMeas[3],6); 
-            }
-        }
-
-        //Run this at the fastest rate of sensors, so ~100Hz for IMU
-        delayMicroseconds(this->freqIMU_);
-        static_calibration_now = micros();
-        time_in_static_calibration = static_calibration_now - static_calibration_start;
+                gpsCalFile.println(gpsMeas[1],6);
+                };
+        };
 
         if (time_in_static_calibration >= next_print) {
             Serial.print("Static Calibration: ");
-            Serial.print(time_in_static_calibration / (CONSTANTS::seconds2micro));
+            Serial.print(time_in_static_calibration / (CONSTANTS::seconds2milli));
             Serial.print(" out of ");
             Serial.print(30);
             Serial.println(" seconds");
-            next_print += 10*CONSTANTS::seconds2micro;
-        }
+            next_print += 10*CONSTANTS::seconds2milli;
+        };
     };
+
     imuCalFile.close(); //Close File
     altCalFile.close(); 
     magCalFile.close();
@@ -459,7 +315,7 @@ bool Sensors::finalArmingCheck() {
     //Can make this more efficent, but focus on readability since this is during the setup loop
     //------Check IMU--------
     for (unsigned int i = 0; i<3; i++) {
-        if (isnan(this->startUpAccelBiasBody_[i]) || isnan(this->startUpGyroBiasBody_[i])) {
+        if (isnan(this->startUpAccelBiasSensor_[i]) || isnan(this->startUpGyroBiasSensor_[i])) {
             calIMU = false;
             break;
         }
@@ -525,70 +381,72 @@ void Sensors::setIMUUpdateRate(unsigned int imuRateDivisor) {
 }
 
 void Sensors::setIMUCalibration(std::array<float,6>& imuData, int numIMUMeas) {
-    //Get IMU Bias
-    Vector3f startUpAccelBiasSensor (imuData[0]/numIMUMeas,imuData[1]/numIMUMeas,imuData[2]/numIMUMeas - CONSTANTS::g0); //Offset by gravity for z
-    Vector3f startUpGyroBiasSensor (imuData[3]/numIMUMeas,imuData[4]/numIMUMeas,imuData[5]/numIMUMeas);
 
-    //Rotate into Body frame
-    this -> startUpAccelBiasBody_ = this -> rotBody2IMU_ * startUpAccelBiasSensor;
-    this -> startUpGyroBiasBody_ = this -> rotBody2IMU_ * startUpGyroBiasSensor;
+    //Get Bias
+    this -> startUpAccelBiasSensor_ =  Vector3f(imuData[0]/numIMUMeas,imuData[1]/numIMUMeas,imuData[2]/numIMUMeas - CONSTANTS::g0); //Offset by gravity for z
+    this -> startUpGyroBiasSensor_ =  Vector3f(imuData[3]/numIMUMeas,imuData[4]/numIMUMeas,imuData[5]/numIMUMeas);
 
     //Do some other checks in here if necessary
     Serial.print("IMU Calibrated Successfully with ");
     Serial.print(numIMUMeas);
     Serial.println(" data.");
     Serial.print("B_ax : ");
-    Serial.print(this->startUpAccelBiasBody_[0],6);
+    Serial.print(this->startUpAccelBiasSensor_[0],6);
     Serial.println(" m/s^2");
     Serial.print("B_ay : ");
-    Serial.print(this->startUpAccelBiasBody_[1],6);
+    Serial.print(this->startUpAccelBiasSensor_[1],6);
     Serial.println(" m/s^2");
     Serial.print("B_az : ");
-    Serial.print(this->startUpAccelBiasBody_[2],6);
+    Serial.print(this->startUpAccelBiasSensor_[2],6);
     Serial.println(" m/s^2");
     Serial.print("B_gx : ");
-    Serial.print(this->startUpGyroBiasBody_[0],6);
-    Serial.println(" /s^2");
+    Serial.print(this->startUpGyroBiasSensor_[0],6);
+    Serial.println(" rad/s");
     Serial.print("B_gy : ");
-    Serial.print(this->startUpGyroBiasBody_[1],6);
-    Serial.println(" m/s^2");
+    Serial.print(this->startUpGyroBiasSensor_[1],6);
+    Serial.println(" rad/s");
     Serial.print("B_gz : ");
-    Serial.print(this->startUpGyroBiasBody_[2],6);
-    Serial.println(" m/s^2");
+    Serial.print(this->startUpGyroBiasSensor_[2],6);
+    Serial.println(" rad/s");
 
 }
 
-Vector3f Sensors::getAccelBias() {
-    return this->startUpAccelBiasBody_;
-};
 
-Vector3f Sensors::getGyroBias() {
-    return this->startUpGyroBiasBody_;
-};
-
-std::array<float,6> Sensors::getIMUMeas(unsigned long now) {
-    std::array<float,6> IMUMeas;
+bool Sensors::imuUpdate(uint32_t now) {
+    // Check if enough time has passed
     if (now - this->lastIMU_ >= this->freqIMU_) {
+        lastIMU_ += this->freqIMU_;
 
-        //Get IMU Reading
-        sensors_event_t imu_a, imu_g, imu_temp; //Don't do anything with temp yet
-        imu_.getEvent(&imu_a, &imu_g, &imu_temp);
+        // TODO:: Get rid of reliance on getEvent and read from register directly
+        imu_.getEvent(&this->last_imu_accel_meas, &this->last_imu_gyro_meas, &this->last_imu_temp_meas);
+    } 
+    return false;
+};
 
-        IMUMeas[0] = imu_a.acceleration.x;
-        IMUMeas[1] = imu_a.acceleration.y;
-        IMUMeas[2] = imu_a.acceleration.z;
-        IMUMeas[3] = imu_g.gyro.x;
-        IMUMeas[4] = imu_g.gyro.y;
-        IMUMeas[5] = imu_g.gyro.z;
-        
-        this->lastIMU_ = now;
-    } else {
-        IMUMeas = {NAN, NAN, NAN, NAN, NAN, NAN};
+//This gets the RAW IMU Measurements
+std::array<float,6> Sensors::getIMUMeas(){
+    return std::array<float,6> {
+        this->last_imu_accel_meas.acceleration.x,
+        this->last_imu_accel_meas.acceleration.y,
+        this->last_imu_accel_meas.acceleration.z,
+        this->last_imu_gyro_meas.gyro.x,
+        this->last_imu_gyro_meas.gyro.y,
+        this->last_imu_gyro_meas.gyro.z
     };
-    return IMUMeas;
-}
+};
 
+std::array<float,6> Sensors::processIMUMeas(std::array<float,6> imuMeas) {
 
+    Vector3f accelBody = this->rotBody2IMU_.transpose() * (Vector3f(imuMeas[0],imuMeas[1],imuMeas[2]) - this->startUpAccelBiasSensor_);
+    Vector3f gyroBody = this->rotBody2IMU_.transpose() * (Vector3f(imuMeas[3],imuMeas[4],imuMeas[5]) - this->startUpGyroBiasSensor_);
+
+    return std::array<float,6> {accelBody[0], 
+                                accelBody[1],
+                                accelBody[2],
+                                gyroBody[0],
+                                gyroBody[1],
+                                gyroBody[2]};
+}; 
 
 // -------------------------- Magnetometer Functions ------------------------------
 void Sensors::setMagUpdateRate(lis2mdl_rate_t magRate) {
@@ -608,6 +466,9 @@ void Sensors::setMagCalibration(std::array<float,3>& magData, float numData) {
     Serial.println(this->magRef_[1]);
     Serial.println(this->magRef_[2]);
 };
+
+
+
 
 void Sensors::calibrateMagnetometer() {
     // This should be done off-board. Collect data, run Least Squares, then input calibrated values.
@@ -630,25 +491,24 @@ void Sensors::calibrateMagnetometer() {
     unsigned long time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
     //unsigned long next_print = 0; // Keeps track of when to print out progress
     while (time_in_dynamic_calibration < 5 * 60 * CONSTANTS::seconds2micro) { // Collect Data for 5 minutes
+        if (this->magUpdate(dynamic_calibration_now)) {
+            std::array<float,3> magMeas = this->getMagMeas();
 
-        std::array<float,3> magMeas = this->getMagMeas(dynamic_calibration_now);
+            if (!isnan(magMeas[0])) { //Only need to check the first index since they should all be NaN
 
-        if (!isnan(magMeas[0])) { //Only need to check the first index since they should all be NaN
+                magMeasCollection.push_back(magMeas);
+                
+                //Write to file
+                magCalFile.print(time_in_dynamic_calibration);
+                magCalFile.print(",");
+                magCalFile.print(magMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
+                magCalFile.print(",");
+                magCalFile.print(magMeas[1],6);
+                magCalFile.print(",");
+                magCalFile.println(magMeas[2],6); 
 
-            magMeasCollection.push_back(magMeas);
-            
-            //Write to file
-            magCalFile.print(time_in_dynamic_calibration);
-            magCalFile.print(",");
-            magCalFile.print(magMeas[0],6); //Print 6 decimals. Can be up to 10 bits (-XX.XXXXXX), including symbols 
-            magCalFile.print(",");
-            magCalFile.print(magMeas[1],6);
-            magCalFile.print(",");
-            magCalFile.println(magMeas[2],6); 
-
+            }
         }
-
-        delayMicroseconds(this->freqMag_); //Run this at frequency of Magnetometer since its the only sensor here
         dynamic_calibration_now = micros();
         time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
         // if (time_in_dynamic_calibration >= next_print) {
@@ -666,22 +526,31 @@ void Sensors::calibrateMagnetometer() {
     
 }
 
-std::array<float,3> Sensors::getMagMeas(unsigned long now) {
-    std::array<float,3> magMeas;
-    if (now - this -> lastMag_ >= this -> freqMag_) {
 
-        //Get Magnetometer Reading
-        sensors_event_t mag_m; //Don't do anything with temp yet
-        mag_.getEvent(&mag_m);
 
-        magMeas[0] = mag_m.magnetic.x;
-        magMeas[1] = mag_m.magnetic.y;
-        magMeas[2] = -mag_m.magnetic.z; //Negative here since the magnetometer is Left Handed. So while X-Y is properly aligned, Z is flipped from Right Handed Coordinate
-        this -> lastMag_ = now;
-    } else {
-        magMeas = {NAN, NAN, NAN};
+bool Sensors::magUpdate(uint32_t now) {
+    // Check if enough time has passed
+    if (now - this->lastMag_ >= this->freqMag_) {
+        lastMag_ += this->freqMag_;
+
+        // TODO:: Get rid of reliance on getEvent and read from register directly
+        mag_.getEvent(&this->last_mag_meas);
+    } 
+    return false;
+};
+
+
+std::array<float,3> Sensors::getMagMeas() {
+    return std::array<float,3> {
+        this->last_mag_meas.magnetic.x,
+        this->last_mag_meas.magnetic.y,
+        -this->last_mag_meas.magnetic.z //Negative here since magnetometer is Left Handed Coordinate system, where X-Y are aligned properly, but Z is Up instead of down
     };
-    return magMeas;
+};
+
+std::array<float,3> Sensors::processMagMeas(std::array<float,3> magMeas){
+    Vector3f magBody = this->rotBody2Mag_.transpose() * this->magSoftIron_*(Vector3f(magMeas) - this->magHardIron_); // Adjust for Soft/Hard Iron calibration, then rotate into body frame
+    return std::array<float,3> {magBody[0], magBody[1], magBody[2]};
 }
 
 Vector3f Sensors::getMagRef() {
@@ -717,19 +586,38 @@ void Sensors::setAltCalibration(float altDataSum, int numAltMeas) {
     Serial.println(" hpa");
 }
 
-float Sensors::getAltMeas(unsigned long now) {
-    float AltMeas;
-    if (now - this -> lastAlt_ >= this -> freqAlt_) {
 
-        //Get Altimeter Reading
-        //AltMeas = this->alt_.readAltitude(CONSTANTS::seaLevelPressure);
-        AltMeas = this->alt_.readPressure()/100.0f; //Returns pressure in hpa
-        this -> lastAlt_ = now;
-    } else {
-        AltMeas =  NAN;
-    };
-    return AltMeas;
-}
+bool Sensors::altUpdate(uint32_t now) {
+    // Check if enough time has passed
+    if (now - this->lastAlt_ >= this->freqAlt_) {
+        lastAlt_ += this->freqAlt_;
+
+        this->last_alt_meas = alt_.readPressure()/100.f; //Returns pressure in hpa
+    } 
+    return false;
+};
+
+float Sensors::getAltMeas() {
+    return this->last_alt_meas;
+};
+
+float Sensors::processAltMeas(float altMeas){
+    // // If our current Altimeter Measurement is within the expected absolute error for the pressure measurement, then update it
+    // // Causes an issue where if we are hovering within this region, it'll try to adjust for that hover state. Should pass in a flag here for when we are idling (i.e. on the ground, vs in mission mode)
+    // if (fabs(this->currAltMeas_-this->referencePressure_)<0.5) { //Absolute pressure up to 0.5 hPA
+
+    //     this->referencePressure_ = (0.995) * this->referencePressure_ + 0.005 * this->currAltMeas_;
+    // }
+
+    float altHeight = 44330 * (1- pow(this->last_alt_meas/this->referencePressure_,0.1903));
+
+    // Gate it to account for difference in reference Pressure at the start. If we are getting negative values, we are basically at rest
+    if (altHeight < 0) {
+        altHeight = 0; 
+    }
+
+    return altHeight; //Will be signed within ESKF to match NED
+}; 
 
 // -------------------------- GPS Functions ------------------------------
 void Sensors::setGPSFlag(const bool gpsFlag) {
@@ -791,7 +679,7 @@ void Sensors::setGPSCalibration(std::array<double,2>& gpsDataSum, int numGPSMeas
     //Set ref ECEF Position
     // Assume we start at 0 Altitude. This is probably fine since the difference is a couple meters, which shouldn't pose too much of an issue
     // Considering the magnitude of the other terms
-    this->referenceECEFPosition_ = this->LLA2ECEF(this->referenceLatitude_, this->referenceLongitude_, 0.0); 
+    this->referenceECEFPosition_ = this->LLA2ECEF(this->referenceLatitude_, this->referenceLongitude_, this->referenceAltitude_); 
 
     //Set ECEF2NED_
     //hardcode the formula R2(-pi/2)R2(-Lat)R3(Long) = R2(-Lat-pi/2)R3(Long) [Passive convention]
@@ -828,28 +716,43 @@ void Sensors::setGPSCalibration(std::array<double,2>& gpsDataSum, int numGPSMeas
 }
 
 
-std::array<double,5> Sensors::getGPSMeas(unsigned long now) {
-    std::array<double,5> gpsMeas;
-    if (now - this -> lastGPS_ >= this -> freqGPS_) {
-        
+bool Sensors::gpsUpdate(uint32_t now) {
+    // Check if enough time has passed
+    if (now - this->lastGPS_ >= this->freqGPS_) {
+        lastGPS_ += this->freqGPS_;
 
         while(this -> gps_.read()); //Reads from serial buffer until there is no characters left, returns 0 when all characters read
-
-        // Check for sentence
+         // Check for sentence
         if (this-> gps_.newNMEAreceived()) {
             this->gps_.parse(this->gps_.lastNMEA());
-        } else {
-            //No new message, don't update lastGPS_ and re-check next cycle.
-            gpsMeas = {NAN, NAN, NAN,NAN,NAN};
-            return gpsMeas;
-        }
+            this->last_gps_meas = {this-> gps_.latitudeDegrees, this-> gps_.longitudeDegrees, this->gps_.altitude,  this->gps_.speed,this->gps_.angle};
+            return true;
+        } 
+        return false;
+    } 
+    return false;
+};
 
-        gpsMeas = {this-> gps_.latitudeDegrees, this-> gps_.longitudeDegrees, this->gps_.altitude,  this->gps_.speed,this->gps_.angle};
 
-        this -> lastGPS_ = now;
-        
-    } else {
-        gpsMeas = {NAN, NAN, NAN, NAN,NAN};
-    };
-    return gpsMeas;
+std::array<double,5> Sensors::getGPSMeas() {
+    return this->last_gps_meas;
+};
+
+
+std::array<float,4> Sensors::processGPSMeas(std::array<double,5> gpsMeas, float currentAlt){
+
+    float v_N = this->currGPSMeas_[2] * cos(this->currGPSMeas_[3] * CONSTANTS::deg2rad);
+    float v_E = this->currGPSMeas_[2] * sin(this->currGPSMeas_[3] * CONSTANTS::deg2rad);
+    Vector3f gpsNEDPos;
+    
+    gpsNEDPos = this->LLA2NED(this-> currGPSMeas_[0],  //Note that adafruit handles N/S and E/W by returning +/-
+                            this-> currGPSMeas_[1],
+                            currentAlt); //When we are processing GPS measurement, use the altitude from the kalman filter since its basically a less noisy altimeter
+
+    return std::array<float,4>{gpsNEDPos[0],gpsNEDPos[1], v_N, v_E};
+}; 
+
+
+void Sensors::setGPSReferenceAltitude(double refAlt){
+    this->referenceAltitude_=refAlt;
 };
