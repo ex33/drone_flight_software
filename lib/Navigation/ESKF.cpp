@@ -229,9 +229,8 @@ void ESKF::propagateCovariance(const Quaternion& q, const Vector3f& accelBias,  
 
 void ESKF::predict(const std::array<float,6> imuMeas, uint32_t now) {
 
-    if (!lastFilterTimeInitialized) {
+    if (lastFilterTime == UINT32_MAX) { 
         lastFilterTime = now;  // set the initial timestamp
-        lastFilterTimeInitialized = true;
     } else {
         Vector3f accelMeas (imuMeas[0], imuMeas[1], imuMeas[2]);
         Vector3f gyroMeas (imuMeas[3], imuMeas[4], imuMeas[5]);
@@ -241,7 +240,8 @@ void ESKF::predict(const std::array<float,6> imuMeas, uint32_t now) {
         Vector3f ba_temp = this->ba_k;
         Vector3f bg_temp = this->bg_k;
 
-        float dt = (now - this->lastFilterTime) / 1000; // Convert milliseconds into seconds here
+        float dt = (now - this->lastFilterTime) / 1000.0f; // Convert milliseconds into seconds here
+        this->dt_ = dt; //DEBUGGING. REMOVE THIS 
 
         //1. Propagate the Error State Covariance Forward in time 
         // Propagate this first since STMs are dependent on state, so want to calculate this BEFORE prediction
@@ -255,6 +255,10 @@ void ESKF::predict(const std::array<float,6> imuMeas, uint32_t now) {
         this->v_k += estAccelMeas * dt;                           //vk = vk + ak*dt
         this->q_k += 0.5f * quatProp(estGyroMeas, q_temp) * dt; //qk = q_k + 0.5 * w x qk * dt = q_k + q_dot*dt
         this->q_k.normalize();
+
+        //3. Update best estimate of body rates
+        this->w_k = gyroMeas - bg_temp;
+
 
         lastFilterTime = now;
     }

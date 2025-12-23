@@ -3,11 +3,11 @@
 Sensors::Sensors(float freqIMU, float freqMag, float freqAlt, float freqGPS, HardwareSerial &serialGPS):
 gps_(&serialGPS) //Initializer list, initializes at same time as sensor object
 {
-    // Convert from Hz to Micro-seconds2micro
-    freqIMU_ = CONSTANTS::seconds2micro/freqIMU; 
-    freqMag_ = CONSTANTS::seconds2micro/freqMag;
-    freqAlt_ = CONSTANTS::seconds2micro/freqMag;
-    freqGPS_ = CONSTANTS::seconds2micro/freqGPS;
+    // Convert from Hz to Milli-Seconds
+    freqIMU_ = CONSTANTS::seconds2milli/freqIMU; 
+    freqMag_ = CONSTANTS::seconds2milli/freqMag;
+    freqAlt_ = CONSTANTS::seconds2milli/freqMag;
+    freqGPS_ = CONSTANTS::seconds2milli/freqGPS;
     
 };
 // -------------------------- All Sensors Functions ------------------------------
@@ -48,11 +48,11 @@ void Sensors::startUpSensors() {
         this->gps_.begin(9600); //Initializes gps communication on provided serial
 
         //Checks to see if we can read a message. This doesn't mean we have a fix
-        unsigned long timeout = 10 * CONSTANTS::seconds2micro; //Will check gps for 5 seconds2micro to see if we recieve a test message
-        unsigned long startGPSTest = micros();
+        unsigned long timeout = 10 * CONSTANTS::seconds2milli; //Will check gps for 5 seconds2milli to see if we recieve a test message
+        unsigned long startGPSTest = millis();
         bool gpsCheckoutBool = false;
         Serial.println ("Checking for GPS Message . . .");
-        while (micros() - startGPSTest < timeout && !gpsCheckoutBool) { //Checks for response without a fix
+        while (millis() - startGPSTest < timeout && !gpsCheckoutBool) { //Checks for response without a fix
             this->gps_.read(); // Get each char from buffer until we have the full sentence
             if (this->gps_.newNMEAreceived()) { //Tells you full sentence aquired
                 this->gps_.parse(this->gps_.lastNMEA()); //Parse through
@@ -173,9 +173,6 @@ void Sensors::calibrateSensors() {
     unsigned long next_print = 0; // Keeps track of when to print out progress
     //Static calibrations (get offsets)
     Serial.println("Starting Static Calibrations ...");
-    unsigned long static_calibration_start = micros();
-    unsigned long static_calibration_now = micros();
-    unsigned long time_in_static_calibration = static_calibration_now - static_calibration_start;
     std::array<float,6> imuMeasSum {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}; // For IMU Bias
     std::array<float,3> magMeasSum {0.0, 0.0, 0.0};
     float altMeasSum = 0.0; // For reference Pressure
@@ -185,7 +182,7 @@ void Sensors::calibrateSensors() {
     int numAltMeas = 0;
     int numGPSMeas = 0;
 
-    //Collect Data for 60 seconds2micro
+    //Collect Data for 60 seconds2milli
     // ~ 6000 IMU data
     // ~ 3000 Altimeter data
     // ~ 60 GPS data
@@ -196,8 +193,11 @@ void Sensors::calibrateSensors() {
 
     // Counter to keep track of how many altimeter measurements to ignore. 
     int ignoreAltMeas = 0; 
-
-    while (time_in_static_calibration < 30 * CONSTANTS::seconds2micro) {
+    int total_seconds_for_calibration = 30;
+    unsigned long static_calibration_start = millis();
+    unsigned long static_calibration_now = millis();
+    unsigned long time_in_static_calibration = static_calibration_now - static_calibration_start;
+    while (time_in_static_calibration < total_seconds_for_calibration * CONSTANTS::seconds2milli) {
         static_calibration_now = millis();
         time_in_static_calibration = static_calibration_now - static_calibration_start;
         // IMU Loop
@@ -251,7 +251,7 @@ void Sensors::calibrateSensors() {
         };
 
         if (this->altUpdate(static_calibration_now)) {
-            if (ignoreAltMeas > 500) { //Ignore the first 500 altimeter measurement to let pressure / temperature stabilize
+            if (ignoreAltMeas > 100) { //Ignore the first 500 altimeter measurement to let pressure / temperature stabilize
                 altMeas = this->getAltMeas();
                 altMeasSum += altMeas;
                 numAltMeas ++ ;
@@ -287,7 +287,7 @@ void Sensors::calibrateSensors() {
             Serial.print("Static Calibration: ");
             Serial.print(time_in_static_calibration / (CONSTANTS::seconds2milli));
             Serial.print(" out of ");
-            Serial.print(30);
+            Serial.print(total_seconds_for_calibration);
             Serial.println(" seconds");
             next_print += 10*CONSTANTS::seconds2milli;
         };
@@ -413,15 +413,18 @@ void Sensors::setIMUCalibration(std::array<float,6>& imuData, int numIMUMeas) {
 
 
 bool Sensors::imuUpdate(uint32_t now) {
-    // Check if enough time has passed
-    if (now - this->lastIMU_ >= this->freqIMU_) {
-        lastIMU_ += this->freqIMU_;
+    if (static_cast<float>(now - lastIMU_) >= this->freqIMU_) {
+        lastIMU_ = now;
 
-        // TODO:: Get rid of reliance on getEvent and read from register directly
-        imu_.getEvent(&this->last_imu_accel_meas, &this->last_imu_gyro_meas, &this->last_imu_temp_meas);
-    } 
+        imu_.getEvent(&last_imu_accel_meas,
+                      &last_imu_gyro_meas,
+                      &last_imu_temp_meas);
+        return true;
+    }
+
     return false;
-};
+}
+
 
 //This gets the RAW IMU Measurements
 std::array<float,6> Sensors::getIMUMeas(){
@@ -475,8 +478,8 @@ void Sensors::calibrateMagnetometer() {
     // Values shouldn't change much if environment / magnetic interferance doesn't change. 
     std::vector<std::array<float,3>> magMeasCollection; 
 
-    unsigned long dynamic_calibration_start = micros();
-    unsigned long dynamic_calibration_now = micros();
+    unsigned long dynamic_calibration_start = millis();
+    unsigned long dynamic_calibration_now = millis();
     //bool mag_calibration_quality_check = false;
     
     // Open Magnetometer Calibration File
@@ -490,7 +493,7 @@ void Sensors::calibrateMagnetometer() {
     Serial.println("Starting Dynamic Calibrations ...");
     unsigned long time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
     //unsigned long next_print = 0; // Keeps track of when to print out progress
-    while (time_in_dynamic_calibration < 5 * 60 * CONSTANTS::seconds2micro) { // Collect Data for 5 minutes
+    while (time_in_dynamic_calibration < 5 * 60 * CONSTANTS::seconds2milli) { // Collect Data for 5 minutes
         if (this->magUpdate(dynamic_calibration_now)) {
             std::array<float,3> magMeas = this->getMagMeas();
 
@@ -509,36 +512,33 @@ void Sensors::calibrateMagnetometer() {
 
             }
         }
-        dynamic_calibration_now = micros();
+        dynamic_calibration_now = millis();
         time_in_dynamic_calibration = dynamic_calibration_now - dynamic_calibration_start;
         // if (time_in_dynamic_calibration >= next_print) {
         //     Serial.print("Dynamic Calibration: ");
-        //     Serial.print(time_in_dynamic_calibration / CONSTANTS::seconds2micro);
+        //     Serial.print(time_in_dynamic_calibration / CONSTANTS::seconds2milli);
         //     Serial.print(" out of ");
         //     Serial.print(60);
         //     Serial.println(" seconds");
-        //     next_print += 10*CONSTANTS::seconds2micro;
+        //     next_print += 10*CONSTANTS::seconds2milli;
         // }
     };
     magCalFile.close(); //Close File
     Serial.println("Finished Collecting Data. Please unplug and perform post processing . . . ");
-
     
 }
 
 
-
 bool Sensors::magUpdate(uint32_t now) {
-    // Check if enough time has passed
-    if (now - this->lastMag_ >= this->freqMag_) {
-        lastMag_ += this->freqMag_;
+    if (static_cast<float>(now - lastMag_) >= this->freqMag_) {
+        lastMag_ = now;
 
-        // TODO:: Get rid of reliance on getEvent and read from register directly
         mag_.getEvent(&this->last_mag_meas);
-    } 
-    return false;
-};
+        return true;
+    }
 
+    return false;
+}
 
 std::array<float,3> Sensors::getMagMeas() {
     return std::array<float,3> {
@@ -576,7 +576,7 @@ void Sensors::setAltCalibration(float altDataSum, int numAltMeas) {
     //this -> referenceAltitude_ = altDataSum / numAltMeas;
     this -> referencePressure_ = altDataSum/numAltMeas;
 
-    Serial.println(altDataSum, 9);
+
     //Do some other checks in here if necessary
     Serial.print("Altimeter Calibrated Successfully with ");
     Serial.print(numAltMeas);
@@ -586,16 +586,17 @@ void Sensors::setAltCalibration(float altDataSum, int numAltMeas) {
     Serial.println(" hpa");
 }
 
-
 bool Sensors::altUpdate(uint32_t now) {
-    // Check if enough time has passed
-    if (now - this->lastAlt_ >= this->freqAlt_) {
-        lastAlt_ += this->freqAlt_;
 
-        this->last_alt_meas = alt_.readPressure()/100.f; //Returns pressure in hpa
-    } 
+    if (static_cast<float>(now - lastAlt_) >= this->freqAlt_) {
+        lastAlt_ = now;
+
+        this->last_alt_meas = alt_.readPressure() / 100.0f; // hPa
+        return true;
+    }
+
     return false;
-};
+}
 
 float Sensors::getAltMeas() {
     return this->last_alt_meas;
@@ -717,9 +718,8 @@ void Sensors::setGPSCalibration(std::array<double,2>& gpsDataSum, int numGPSMeas
 
 
 bool Sensors::gpsUpdate(uint32_t now) {
-    // Check if enough time has passed
-    if (now - this->lastGPS_ >= this->freqGPS_) {
-        lastGPS_ += this->freqGPS_;
+    if (static_cast<float>(now - lastGPS_) >= this->freqGPS_) {
+        lastGPS_ = now;
 
         while(this -> gps_.read()); //Reads from serial buffer until there is no characters left, returns 0 when all characters read
          // Check for sentence

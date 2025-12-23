@@ -25,9 +25,6 @@
 class Sensors {
 public:
 
-    enum class SensorErrors{
-        InitError
-    };
 
     /**
      * @brief Init Sensors object. Make sure when setting the ranges, it matches with this. 
@@ -443,10 +440,10 @@ private:
     std::array<double,5> last_gps_meas;
 
     //Frequencies (micro-seconds)
-    uint32_t freqIMU_; 
-    uint32_t freqMag_;
-    uint32_t freqAlt_;
-    uint32_t freqGPS_;
+    float freqIMU_; 
+    float freqMag_;
+    float freqAlt_;
+    float freqGPS_;
 
     //Rotations
     Rotation rotBody2IMU_;
@@ -454,7 +451,7 @@ private:
     Vector3f magHardIron_ ; 
     Rotation magSoftIron_ ; 
 
-    //Time since last measurements ( Initialize w/ zero so start with a reading ) 
+    //Time since last measurements (Set to 0 so first call will have measurement)
     uint32_t lastIMU_ = 0; 
     uint32_t lastMag_ = 0; 
     uint32_t lastAlt_ = 0;

@@ -276,7 +276,7 @@ public:
     void setMagRef(Vector3f magRef);
 
 
-    // Getter functions. More for regression testing
+    // Getter functions
     inline Vector3f getPosition() const {
         return this->p_k;
     };
@@ -338,8 +338,15 @@ public:
         return this -> sigGPSVel_;
     }
 
+    //DEBUGGING
+    inline float getDT() const {
+        return this -> dt_;
+    }
+
 private:
     //unsigned long lastPredict = 0; // Used to keep track of dt
+    float dt_; //DEBUGGING
+
 
     //Nominal States
     Vector3f p_k;
@@ -382,8 +389,8 @@ private:
     Vector3f magRef_;
 
     // Prediction and Update Flags/Tokens
-    bool lastFilterTimeInitialized = false; //Ensures that we don't predict the very first loop and just have updates
-    uint32_t lastFilterTime; //General time that gets set after each prediction and update, in case measurements wants to be processed seperately
+    // Need a way to now if lastFilterTime is initialized or not to keep prediction timestep properly logged
+    uint32_t lastFilterTime = UINT32_MAX; //General time that gets set after each prediction and update, in case measurements wants to be processed seperately
 
     bool updateFlag; 
 
