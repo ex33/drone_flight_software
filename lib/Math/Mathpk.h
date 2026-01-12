@@ -7,7 +7,7 @@
 #include <array>
 #include <cmath>
 #include "Matrix18f.h"
-
+#include <cstdint> //Gives uint32_t. Basically all modules imports Mathpk so put this here for convinence
 //============== Vector3f ===================
 inline float dot(const Vector3f& a, const Vector3f& b) {
     return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];

@@ -12,11 +12,11 @@
 namespace SETUP {
 // ========================= Vehicle Parameters =========================
 // Motor Parameters
-inline constexpr float kM = 1.0f; 
-inline constexpr float kT = 1.0f;
+inline constexpr float kT = 5.63e-5f; // [ N*s^2/rev^2 ] Thrust Constant
+inline constexpr float kM = 7.51e-7f; // [ N*m*s^2/rev^2 ] Torque Constant
 
 //Physical parameters
-inline constexpr float L = 0.75f; // Pitch / Roll Moment arm
+inline constexpr float L = 0.08f; // Pitch / Roll Moment arm
 
 // ========================= Sensors =========================
 
@@ -54,6 +54,7 @@ inline constexpr std::array<float,9> rotBody2Mag{1.0, 0.0, 0.0,
 // GPS Wiring
 HardwareSerial& gpsSerial = Serial8; // GPS Connected to Tx/Rx 8 UART
 bool gpsFlag = false; //Are we flying with GPS or not
+
 //========================= Navigation =========================
 inline constexpr std::array<float,3> p0 {0.0f,0.0f,0.0f};
 inline constexpr std::array<float,3> v0 {0.0f,0.0f,0.0f};
@@ -100,6 +101,28 @@ inline constexpr float sig_gps_vel(0.1f);
 
 // This is the Reference vector for EKF. Either user provided, or passed to from Sensor Calibrations, in which We aren't really pointed at True North or Mag north, and using a local frame instead that is rotated from Mag North.
 //inline constexpr Vector3f magRef{11.4299 * PI/180}; 
+
+
+// ========================= Controller =========================
+inline constexpr std::array<float,3> pRef {0.0f, 0.0f, 0.0f};
+inline constexpr std::array<float,3> vRef {0.0f, 0.0f, 0.0f};
+inline constexpr std::array<float,4> qRef {1.0f, 0.0f, 0.0f, 0.0f};
+inline constexpr std::array<float,3> wRef {0.0f, 0.0f, 0.0f};
+inline constexpr std::array<float,4> uRef {0.0f, 0.0f, 0.0f}; //Hover Reference
+inline constexpr std::array<float,48> K {  
+-3768.37555821952f,  3094.9351294033f,  -7821.72041357272f, -12912.5526355348f,  10601.5460968904f, -23429.0995571371f,  112281.94027554f,   136993.645715096f,  32351.5594092494f,   14760.9652458602f,  18047.8038528373f,  33254.3231975853f,
+-3768.37555821286f, -3094.93512940513f, -7821.72041357484f, -12912.5526355172f, -10601.5460968818f, -23429.0995571414f, -112281.940275284f,  136993.645714991f,  -32351.5594092518f, -14760.9652458586f,  18047.8038528366f, -33254.3231975848f,
+ 3768.3755582117f,  -3094.93512940343f, -7821.72041357451f,  12912.5526355139f, -10601.5460968996f, -23429.0995571395f, -112281.940275589f, -136993.645714994f,  32351.5594092463f,  -14760.9652458604f, -18047.8038528366f,  33254.3231975843f,
+ 3768.37555821385f,  3094.93512939963f, -7821.72041357656f,  12912.5526355188f,  10601.5460968693f, -23429.0995571431f,  112281.94027523f,  -136993.645715011f,  -32351.5594092447f,  14760.9652458584f, -18047.8038528367f, -33254.3231975854f
+};
+
+// Can independently turn on/off controller for NE + D positions.
+// Disable everything if testing attitude controller
+// Enable verticalControllerFlag once attitude ocntroller is good
+// Enable everything once confident things are working
+bool horizontalControllerFlag = false; //Flag for Controller to determine if position controller is being used
+bool verticalControllerFlag = false; // Flag for Controller to determine if height (hover / altitude hold) is disabled
+
 // ========================= Motors =========================
 // Pins are 28 29 37 36 (top to bottom), left to right
 inline constexpr int esc1SignalPin = 28;
@@ -113,6 +136,9 @@ inline constexpr int M1StartPWM = 1200;
 inline constexpr int M2StartPWM = 1200; 
 inline constexpr int M3StartPWM = 1200; 
 inline constexpr int M4StartPWM = 1200; 
+
+inline constexpr float maxRotRate = 0; // [Rot / s] Used to Convert Control requested to PWM
+
 
 
 // ========================= LOGGER / RINGBUFFER SIZE =========================
@@ -467,15 +493,13 @@ void SETUP_Test_Sensors_Motors(Sensors& sensors, Servo & motor1CW, Servo& motor2
 void SETUP_AllanVariance(Sensors& sensors) { //Using millis() to prevent overflow from bits
   // Set up Time durations
   uint32_t imu_logger_flush_rate = 1000 * 60* 10; //10 minutes
-  uint32_t imu_logger_duration =  CONSTANTS::seconds2milli * 5UL * 60UL * 60UL; // 3 Hours
+  uint32_t imu_logger_duration =  CONSTANTS::seconds2milli * 10UL * 60UL * 60UL; // 3 Hours
   uint32_t mag_alt_logger_duration = CONSTANTS::seconds2milli * 10 * 60; // 10 minutes 
-
   //====================Start of Actual Code====================
 
   //Begin Serial 
   Serial.begin(9600); 
   while (!Serial) {};
-
   //Begin SD Card
   if (!SD.begin(SD_CS)) {
     Serial.println("SD card not found");
@@ -507,7 +531,7 @@ void SETUP_AllanVariance(Sensors& sensors) { //Using millis() to prevent overflo
   uint32_t time_elapsed = 0.0; //Keeps track of time in loop
   uint32_t logger_last_flush = 0.0; //Keeps track of last SD card flush
 
-  Serial.println("Starting IMU Logging...");
+  Serial.print("Starting IMU Logging...");
   uint32_t initial_time = millis(); //Keeps track of initial time so time starts at 0
   uint32_t loop_start_time;
   while (time_elapsed < imu_logger_duration) {

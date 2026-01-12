@@ -10,6 +10,7 @@
 #include "FSM.h"
 #include "Sensors.h"
 #include "ESKF.h"
+#include "Controller.h"
 #include "SetUp.h"
 #include "Logger.h" //Includes RingBuffer and DataTypes
 
@@ -28,20 +29,14 @@ ESKF eskf(SETUP::p0, SETUP::v0, SETUP::q0, SETUP::ba0, SETUP::bg0, SETUP::bm0,
           SETUP::sig_acc, SETUP::sig_gyro, SETUP::eta_acc, SETUP::eta_gyro, SETUP::eta_mag,
           SETUP::sig_mag, SETUP::sig_tilt, SETUP::sig_alt, SETUP::sig_gps_pos, SETUP::sig_gps_vel);
 
-//States from ESKF (keep global)
-Vector3f p_k;
-Vector3f v_k;
-Quaternion q_k;
-Vector3f w_k;
-
-
+//============================CONTROLLER============================
+Controller controller(SETUP::pRef, SETUP::vRef, SETUP::qRef, SETUP::wRef, SETUP::uRef, SETUP::K, SETUP::horizontalControllerFlag, SETUP::verticalControllerFlag); //Initialize with a constant reference. Will be updated by Guidance if necessary in Loop
 //============================MOTOR============================
 //Eventually move these into MOTOR class
 Servo motor1CW; 
 Servo motor2CCW; 
 Servo motor3CW; 
 Servo motor4CCW; 
-
 
 //============================LOGGERS/BUFFERS============================
 //Set up Ringbuffers
@@ -234,18 +229,25 @@ void loop() {
 
     }
   }
+
+  // Running Rest of GNC...
+  // Frequencies should be... eskf >= controller > guidance
+  // Eskf needs to run fastest since state can be used for switching modes
+  // Controller can run at a slower rate as long as stable 
+  // Guidance can run slowest since that is usually just updating waypoints
+
   //-------Update Estimated State (Not really via loops)--------
-  eskf.injectError(); // Inject Error of the eskf if there were any updates (use a flag here)
+  eskf.injectError(); // Inject Error of the eskf if there were any updates (uses a flag internally here)
 
+  // GUID Runs here. FOr now, not really running anything
 
-  // Control
-  // Call the state directly from the filter inside this loop (like how logger is doing)
-  // That way, each time the state is needed, it'll be the most up to date without having to form a seperate nav loop to pass information. 
-  // Even with FSM, it can extract the state itself.
-  
-
-
-
+  // Control / Motor
+  if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates())) {
+    std::array<float,4> uCMD = controller.getControl();
+    //Serial.println() To test at first, just print out the controller and make sure it increases / decreases as it tilts
+    // motor.updatePWM(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to 0-100
+  }
+ 
   // Save down buffer for guidance control and navigation all at the (Frequency determined by SETUP::logGNCDataFrequency)
   logger.logGNC(loop_start_time, current_time, 
                 eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getAccelBias(), eskf.getGyroBias(), eskf.getMagBias());

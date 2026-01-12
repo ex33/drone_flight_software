@@ -5,18 +5,18 @@
 
 float tol = 1e-6;
 
-Vector3f posRef(1.0f, 1.0f, -10.0f);
-Vector3f velRef(0.0f, 0.0f, 0.0f);
-Quaternion quatRef(1.0f, 0.0f, 0.0f, 0.0f);
-Vector3f rateRef(0.0f, 0.0f, 0.0f);
+std::array<float,3> posRef {1.0f, 1.0f, -10.0f};
+std::array<float,3> velRef{0.0f, 0.0f, 0.0f};
+std::array<float,4> quatRef{1.0f, 0.0f, 0.0f, 0.0f};
+std::array<float,3> rateRef{0.0f, 0.0f, 0.0f};
 
 
 // Thrust = kT * (u1 + u2 + u3 + u4)
 // To cancel out weight, Thrust = m*g.
 // To NOT have any roll/pitch/yaw u1=u2=u3=u4
 // u = u1 = u2 = u3 = u4 = mg/(4*kT)
-float kT = 1.0f;
-float m = 0.5f; 
+float kT = 5.63e-5f;
+float m = 0.83f; 
 
 float u = m*CONSTANTS::g0 / (4*kT);
 std::array<float,4> nominalControl {u,u,u,u};
@@ -27,12 +27,17 @@ std::array<float,4> nominalControl {u,u,u,u};
 // kT = 1, kM = 0.0245
 // m = 0.5
 // Linearization only dependent upon quaternion and rate reference (identity and zero)
-std::array<float,48> K {-4.849329729498414e-04f, 4.849329729501528e-04f, -1.577043970534665e-02f, -2.701174473031700e-03f, 2.701174473031881e-03f, -6.481927938667377e-02f, 4.592644411647154e-02f, 4.592644411647229e-02f, 1.575353741974887e-02f, 1.973242999999838e-02f, 1.973242999999882e-02f, 2.989197200035366e-02f,
-                        -4.849329729498509e-04f, -4.849329729500159e-04f, -1.577043970535033e-02f, -2.701174473031981e-03f, -2.701174473031971e-03f, -6.481927938665394e-02f, -4.592644411646527e-02f, 4.592644411647453e-02f, -1.575353741974892e-02f, -1.973242999999827e-02f, 1.973242999999937e-02f, -2.989197200035303e-02f,
-                        4.849329729498911e-04f, -4.849329729497276e-04f, -1.577043970534945e-02f, 2.701174473031877e-03f, -2.701174473031226e-03f, -6.481927938666136e-02f, -4.592644411646945e-02f, -4.592644411647349e-02f, 1.575353741976178e-02f, -1.973242999999824e-02f, -1.973242999999901e-02f, 2.989197200035791e-02f,
-                        4.849329729498709e-04f, 4.849329729497230e-04f, -1.577043970534666e-02f, 2.701174473032187e-03f, 2.701174473032131e-03f, -6.481927938668910e-02f, 4.592644411647674e-02f, -4.592644411647954e-02f, -1.575353741976311e-02f, 1.973242999999941e-02f, -1.973242999999982e-02f, -2.989197200036071e-02f};
+std::array<float,48> K {  
+-3768.37555821952f,  3094.9351294033f,  -7821.72041357272f, -12912.5526355348f,  10601.5460968904f, -23429.0995571371f,  112281.94027554f,   136993.645715096f,  32351.5594092494f,   14760.9652458602f,  18047.8038528373f,  33254.3231975853f,
+-3768.37555821286f, -3094.93512940513f, -7821.72041357484f, -12912.5526355172f, -10601.5460968818f, -23429.0995571414f, -112281.940275284f,  136993.645714991f,  -32351.5594092518f, -14760.9652458586f,  18047.8038528366f, -33254.3231975848f,
+ 3768.3755582117f,  -3094.93512940343f, -7821.72041357451f,  12912.5526355139f, -10601.5460968996f, -23429.0995571395f, -112281.940275589f, -136993.645714994f,  32351.5594092463f,  -14760.9652458604f, -18047.8038528366f,  33254.3231975843f,
+ 3768.37555821385f,  3094.93512939963f, -7821.72041357656f,  12912.5526355188f,  10601.5460968693f, -23429.0995571431f,  112281.94027523f,  -136993.645715011f,  -32351.5594092447f,  14760.9652458584f, -18047.8038528367f, -33254.3231975854f
+};
 
-Controller controller(posRef, velRef, quatRef, rateRef, nominalControl, K);
+//Frequency 
+float freq = 50; // Hz
+
+Controller controller(freq, posRef, velRef, quatRef, rateRef, nominalControl, K, true, true); 
 
 
 //Make these bool so that the actual test assert returns what lines.
@@ -127,10 +132,14 @@ void test_controller_functions() {
 
 
   // Test Control Calcluated correctly
-  std::array<float,4> uk_Test = controller.getControl(p_hat, v_hat, q_hat, w_hat);
-  std::array<float,4> uk_True {1.38241970794663f,1.41625724134349f, 1.39675994755104f,1.41087565898074f};
+  std::array<float,4> uk_Test;
+  if (controller.updateControl(100, p_hat, v_hat, q_hat, w_hat)) { //For the first call, any time provided to controller will update it
+    uk_Test = controller.getControl(); 
+  }
+
+  std::array<float,4> uk_True {98307.0667997464, 135663.318237072, 114667.736849078, 130647.871735933};
   for (unsigned int i = 0; i < 4; ++i) {
-      TEST_ASSERT_FLOAT_WITHIN(tol, uk_True[i], uk_Test[i]);
+      TEST_ASSERT_FLOAT_WITHIN(1, uk_True[i], uk_Test[i]); // Lower the tolerance here since this is on order of 1e6 already
   };
 
   // Test Errors updated properly
@@ -139,9 +148,9 @@ void test_controller_functions() {
   Vector3f alpha_Test = controller.getAlpha();
   Vector3f rateErr_Test = controller.getRateErr();
 
-  Vector3f posErr_True (-0.5f , -0.4f, 9.51f);
+  Vector3f posErr_True (-0.5f , -0.4f, 9.5f);
   Vector3f velErr_True (0.1f, 0.3f, 0.4f);
-  Vector3f alpha_True (0.0080038928796285f, 0.0064031143037028f, 0.00200097321990712f);
+  Vector3f alpha_True (0.00400194643981425f,0.0032015571518514f, 0.00100048660995356f);
   Vector3f rateErr_True (0.2f, 0.1f, 0.4f);
 
   char msg [100];

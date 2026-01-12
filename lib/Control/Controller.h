@@ -3,22 +3,26 @@
 #define _CONTROLLER_H
 
 #include "Mathpk.h"
+#include "Constants.h"
 class Controller {
 public:
 
   /**
    * @brief Init Controller object. 
    * 
+   * @param freq Frequency to update Controller Action
    * @param positionReference Position Reference
    * @param velocityReference Velocity Reference
    * @param quaternionReference Quaternion Reference
    * @param rateReference Rate Reference
    * @param nominalControl Control for making reference an equilbrium point
    * @param K LQR Gain Matrix [Calculated on ground]
+   * @param horizontalControllerFlag Boolean to ignore X-Y Position error
+   * @param verticalControllerFlag Boolean to ignore Z Position Error and nominal control
    * 
    * Initializes Controller. NOTE, KALMAN GAIN HAS MOTOR SPIN DIRECTION EMBEDED
    */
-  Controller(const Vector3f& positionReference,const Vector3f& velocityReference,const Quaternion& quaternionReference,const Vector3f& rateReference, const std::array<float,4>& controlReference, const std::array<float,48> K);
+  Controller(const float & freq, const std::array<float,3>& positionReference,const std::array<float,3>& velocityReference,const std::array<float,4>& quaternionReference,const std::array<float,3>& rateReference, const std::array<float,4>& controlReference, const std::array<float,48>& K, const bool horizontalControllerFlag, const bool verticalControllerFlag);
 
   /**
    * @brief Updates References 
@@ -49,18 +53,27 @@ public:
 
 
   /**
-   * @brief Return Control Vector
+   * @brief Checks internally if enough time has passed to udpate control requested
    * 
+   * @param now Time to check for Controller Update
    * @param p_hat Position Estimate from Navigation
    * @param v_hat Velocity Estimate from Navigation
    * @param q_hat Quaternion Estimate from Navigation
    * @param w_hat Rate Estimate from Navigation
    * 
+  * @return If (time_now - time_last_update) > frequency, then this will update the member containing the 
+    * control and return TRUE to signal a new control request is avaliable.
    * Computes State error u_des = u_bar - K*(x_hat - x_bar)
    * Control is the Spin Rates ^2 of each Motor
    */    
-  std::array<float,4> getControl(const Vector3f& p_hat, const Vector3f& v_hat, const Quaternion& q_hat, const Vector3f& w_hat); 
-
+  bool updateControl(uint32_t now,  const Vector3f& p_hat, const Vector3f& v_hat, const Quaternion& q_hat, const Vector3f& w_hat); 
+    
+  /**
+    * @brief Returns the Current computed Control
+    * 
+    * @return Current Computed Control
+    */
+  std::array<float,4> getControl ();
 
   // Getter functions for testing
   inline Vector3f getPosRef() const {
@@ -82,7 +95,7 @@ public:
       return this->posErr_;
   };
   inline Vector3f getVelErr() const {
-      return this->velRef_;
+      return this->velErr_;
   };
   inline Vector3f getAlpha() const {
       return this->alpha_;
@@ -110,7 +123,19 @@ private:
   Vector3f alpha_; 
   Vector3f rateErr_;
 
+  //Frequency to run LQR Controller at
+  float freq_;
+
+  // Time since last controller ran
+  uint32_t lastUpdate_ = 0;
+
+  // Current Control
+  std::array<float,4> currControl_ ;
 
   std::array<float,48> K_ ; //4 x 12
+
+  //Flags 
+  bool verticalControllerFlag_;
+  bool horizontalControllerFlag_;
 };
 #endif // CONTROLLER_H
