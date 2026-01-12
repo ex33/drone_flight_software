@@ -11,6 +11,7 @@
 #include "Sensors.h"
 #include "ESKF.h"
 #include "Controller.h"
+#include "Motor.h"
 #include "SetUp.h"
 #include "Logger.h" //Includes RingBuffer and DataTypes
 
@@ -30,13 +31,12 @@ ESKF eskf(SETUP::p0, SETUP::v0, SETUP::q0, SETUP::ba0, SETUP::bg0, SETUP::bm0,
           SETUP::sig_mag, SETUP::sig_tilt, SETUP::sig_alt, SETUP::sig_gps_pos, SETUP::sig_gps_vel);
 
 //============================CONTROLLER============================
-Controller controller(SETUP::pRef, SETUP::vRef, SETUP::qRef, SETUP::wRef, SETUP::uRef, SETUP::K, SETUP::horizontalControllerFlag, SETUP::verticalControllerFlag); //Initialize with a constant reference. Will be updated by Guidance if necessary in Loop
+Controller controller(SETUP::controlFrequency, SETUP::pRef, SETUP::vRef, SETUP::qRef, SETUP::wRef, SETUP::uRef, SETUP::K, SETUP::horizontalControllerFlag, SETUP::verticalControllerFlag); //Initialize with a constant reference. Will be updated by Guidance if necessary in Loop
 //============================MOTOR============================
-//Eventually move these into MOTOR class
-Servo motor1CW; 
-Servo motor2CCW; 
-Servo motor3CW; 
-Servo motor4CCW; 
+Motors motors(SETUP::esc1SignalPin, SETUP::esc2SignalPin, SETUP::esc3SignalPin, SETUP::esc4SignalPin,
+            SETUP::M1StartPWM, SETUP::M2StartPWM, SETUP::M3StartPWM, SETUP::M4StartPWM, 
+            SETUP::minPWM, SETUP::maxPWM, SETUP::maxSpin);
+
 
 //============================LOGGERS/BUFFERS============================
 //Set up Ringbuffers

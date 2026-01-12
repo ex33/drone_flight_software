@@ -25,11 +25,7 @@ inline constexpr float imuFrequency {100}; //Hz
 inline constexpr float magFrequency {50}; //Hz
 inline constexpr float altFrequency {25}; //Hz, 25 Hz for Indoors
 inline constexpr float gpsFrequency {1}; //Hz
-//Use these in main to determine looping frequencies. Will replace with interrupts eventually
-float imuLoopFrequency = 1000000UL / imuFrequency; 
-float magLoopFrequency = 1000000UL / magFrequency;
-float altLoopFrequency = 1000000UL / altFrequency; 
-float gpsLoopFrequency = 1000000UL / gpsFrequency;
+
 
 // Sensor Calibration / Orientations
 //inline constexpr std::array<float,3> magHardIron{-53.550001000000002 ,  7.199998500000000 ,-14.550001500000000};
@@ -104,6 +100,7 @@ inline constexpr float sig_gps_vel(0.1f);
 
 
 // ========================= Controller =========================
+inline constexpr float controlFrequency {100}; // Hz, Running at IMU frequency, since ESKF isn't predicting faster than that. Can consider seperating Gyro and Accelerometer rates! Then can pseudo have inner / outter loop since attitude will udpate faster and can increase this frequency
 inline constexpr std::array<float,3> pRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,3> vRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,4> qRef {1.0f, 0.0f, 0.0f, 0.0f};
@@ -120,6 +117,7 @@ inline constexpr std::array<float,48> K {
 // Disable everything if testing attitude controller
 // Enable verticalControllerFlag once attitude ocntroller is good
 // Enable everything once confident things are working
+
 bool horizontalControllerFlag = false; //Flag for Controller to determine if position controller is being used
 bool verticalControllerFlag = false; // Flag for Controller to determine if height (hover / altitude hold) is disabled
 
@@ -137,6 +135,10 @@ inline constexpr int M2StartPWM = 1200;
 inline constexpr int M3StartPWM = 1200; 
 inline constexpr int M4StartPWM = 1200; 
 
+// Without a way to record RPM, will backcalculate from kT
+// Give the max pwm of 1950 and record the max thrust (can do multiple samples and average)
+// Using kT, then back calculate max spin rate
+// Add some factor to knock this down. Better to under-estimate actuator capabilities than over
 inline constexpr float maxRotRate = 0; // [Rot / s] Used to Convert Control requested to PWM
 
 
