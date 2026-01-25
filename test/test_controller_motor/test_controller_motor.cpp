@@ -1,5 +1,6 @@
 #include "Controller.h"
 #include "Constants.h"
+#include "Motors.h"
 #include<unity.h>
 #include <string>
 
@@ -15,29 +16,46 @@ std::array<float,3> rateRef{0.0f, 0.0f, 0.0f};
 // To cancel out weight, Thrust = m*g.
 // To NOT have any roll/pitch/yaw u1=u2=u3=u4
 // u = u1 = u2 = u3 = u4 = mg/(4*kT)
-float kT = 5.63e-5f;
+float kT = 1.2e-04;
+float kM = 7.51e-07;
+float L = 0.08f;
 float m = 0.83f; 
 
-float u = m*CONSTANTS::g0 / (4*kT);
-std::array<float,4> nominalControl {u,u,u,u};
+float Ft = m*CONSTANTS::g0;
+std::array<float,4> nominalControl {Ft,0.0f,0.0f,0.0f};
 
 // Gain Matrix.
-// For MOI = [0.0023, 0.0023, 0.004]
-// L = 0.1750
-// kT = 1, kM = 0.0245
-// m = 0.5
 // Linearization only dependent upon quaternion and rate reference (identity and zero)
-std::array<float,48> K {  
--3768.37555821952f,  3094.9351294033f,  -7821.72041357272f, -12912.5526355348f,  10601.5460968904f, -23429.0995571371f,  112281.94027554f,   136993.645715096f,  32351.5594092494f,   14760.9652458602f,  18047.8038528373f,  33254.3231975853f,
--3768.37555821286f, -3094.93512940513f, -7821.72041357484f, -12912.5526355172f, -10601.5460968818f, -23429.0995571414f, -112281.940275284f,  136993.645714991f,  -32351.5594092518f, -14760.9652458586f,  18047.8038528366f, -33254.3231975848f,
- 3768.3755582117f,  -3094.93512940343f, -7821.72041357451f,  12912.5526355139f, -10601.5460968996f, -23429.0995571395f, -112281.940275589f, -136993.645714994f,  32351.5594092463f,  -14760.9652458604f, -18047.8038528366f,  33254.3231975843f,
- 3768.37555821385f,  3094.93512939963f, -7821.72041357656f,  12912.5526355188f,  10601.5460968693f, -23429.0995571431f,  112281.94027523f,  -136993.645715011f,  -32351.5594092447f,  14760.9652458584f, -18047.8038528367f, -33254.3231975854f
-};
+// NOT dependent upon kT kM or L
+std::array<float,48> K {0.0f , 0.0f, -7.9464090440365f , 0.0f, 0.0f, -22.8071638549271f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                         0.0f, 0.0633491788912569f , 0.0f, 0.0f, 0.216910884742845f, 0.0f, 2.29232028316404f, 0.0f, 0.0f, 0.300548926668003f, 0.0f, 0.0f,
+                                        -0.0822366804856256f, 0.0f, 0.0f, -0.281605587633673f, 0.0f, 0.0f, 0.0f, 2.97731024068504f , 0.0f, 0.0f, 0.390567835752269f, 0.0f, 
+                                         0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.311508647946585f};
 
 //Frequency 
 float freq = 50; // Hz
 
 Controller controller(freq, posRef, velRef, quatRef, rateRef, nominalControl, K, true, true); 
+
+// Motor stuff
+// Pins are 28 29 37 36 (top to bottom), left to right
+int esc1SignalPin = 28;
+int esc2SignalPin = 37;
+int esc3SignalPin = 29;
+int esc4SignalPin = 36;
+
+int maxPWM = 1950; //Recommended by Hobby Wing
+int saturationPWM = 1700;
+int minPWM = 1150; //Recommended by Hobby Wing
+int M1StartPWM = 1195; 
+int M2StartPWM = 1195; 
+int M3StartPWM = 1195; 
+int M4StartPWM = 1195; 
+
+float maxSpinSquare =  1600000.0f; // [Rev^2 / s^2] Used to Convert Control requested to PWM
+Motors motors(kT, kM, L, esc1SignalPin, esc2SignalPin, esc3SignalPin, esc4SignalPin,
+              M1StartPWM, M2StartPWM, M3StartPWM, M4StartPWM, 
+              minPWM, maxPWM, saturationPWM, maxSpinSquare);
 
 
 //Make these bool so that the actual test assert returns what lines.
@@ -102,25 +120,25 @@ void test_controller_init() {
   std::array<float,4> testNominalControl = controller.getNominalControl();
   std::array<float,48> testGainMatrix = controller.getGainMatrix();
 
-char msg [100];
-bool posRef_test_result = compare_vector(posRef, testPosRef, tol, msg);
-TEST_ASSERT_TRUE_MESSAGE(posRef_test_result, msg);
+  char msg [100];
+  bool posRef_test_result = compare_vector(posRef, testPosRef, tol, msg);
+  TEST_ASSERT_TRUE_MESSAGE(posRef_test_result, msg);
 
-bool velRef_test_result = compare_vector(velRef, testVelRef, tol, msg);
-TEST_ASSERT_TRUE_MESSAGE(velRef_test_result, msg);
+  bool velRef_test_result = compare_vector(velRef, testVelRef, tol, msg);
+  TEST_ASSERT_TRUE_MESSAGE(velRef_test_result, msg);
 
-bool quatRef_test_result = compare_quaternion(quatRef, testQuatRef, tol, msg);
-TEST_ASSERT_TRUE_MESSAGE(quatRef_test_result, msg);
+  bool quatRef_test_result = compare_quaternion(quatRef, testQuatRef, tol, msg);
+  TEST_ASSERT_TRUE_MESSAGE(quatRef_test_result, msg);
 
-bool rateRef_test_result = compare_vector(rateRef, testRateRef, tol, msg);
-TEST_ASSERT_TRUE_MESSAGE(rateRef_test_result, msg);
+  bool rateRef_test_result = compare_vector(rateRef, testRateRef, tol, msg);
+  TEST_ASSERT_TRUE_MESSAGE(rateRef_test_result, msg);
 
-for (unsigned int i = 0; i < 4; ++i) {
-    TEST_ASSERT_FLOAT_WITHIN(tol, nominalControl[i], testNominalControl[i]);
-};
+  for (unsigned int i = 0; i < 4; ++i) {
+      TEST_ASSERT_FLOAT_WITHIN(tol, nominalControl[i], testNominalControl[i]);
+  };
 
-bool gain_test_result = compare_matrix(K, testGainMatrix, tol, msg);
-TEST_ASSERT_TRUE_MESSAGE(gain_test_result, msg);
+  bool gain_test_result = compare_matrix(K, testGainMatrix, tol, msg);
+  TEST_ASSERT_TRUE_MESSAGE(gain_test_result, msg);
 
 }
 
@@ -130,16 +148,15 @@ void test_controller_functions() {
   Quaternion q_hat (0.999986366648586f ,0.00400194643981425f ,  0.0032015571518514f  , 0.00100048660995356f);
   Vector3f w_hat (0.2f, 0.1f, 0.4f);
 
-
   // Test Control Calcluated correctly
   std::array<float,4> uk_Test;
   if (controller.updateControl(100, p_hat, v_hat, q_hat, w_hat)) { //For the first call, any time provided to controller will update it
     uk_Test = controller.getControl(); 
   }
 
-  std::array<float,4> uk_True {98307.0667997464, 135663.318237072, 114667.736849078, 130647.871735933};
+  std::array<float,4> uk_True {92.7532709603176, -0.109017122196074, -0.061546593949018 ,-0.124603459178634};
   for (unsigned int i = 0; i < 4; ++i) {
-      TEST_ASSERT_FLOAT_WITHIN(1, uk_True[i], uk_Test[i]); // Lower the tolerance here since this is on order of 1e6 already
+      TEST_ASSERT_FLOAT_WITHIN(1e-6, uk_True[i], uk_Test[i]); 
   };
 
   // Test Errors updated properly
@@ -165,8 +182,6 @@ void test_controller_functions() {
 
   bool rateErr_test_result = compare_vector(rateErr_True, rateErr_Test, tol, msg);
   TEST_ASSERT_TRUE_MESSAGE(rateErr_test_result, msg);
-
-
 
   // Make sure that the parameters stayed constant
   Vector3f testPosRef = controller.getPosRef();
@@ -195,16 +210,94 @@ void test_controller_functions() {
 
   bool gain_test_result = compare_matrix(K, testGainMatrix, tol, msg);
   TEST_ASSERT_TRUE_MESSAGE(gain_test_result, msg);
+}
 
+// Test motor stuff
+void test_motors_init() {
+    // Motor constants 
+    float testKM = motors.getKM();
+    float testKT = motors.getKT();
+    float testL = motors.getL();
+    std::array<float,16> testPInvM = motors.getPInvM();
+    std::array<float,16> pInvM = {2083.333333f,          26041.666666f,          26041.666666f,          -332889.480692409f,
+                                  2083.333333f,         -26041.666666f,          26041.666666f,          332889.48069241f,
+                                  2083.333333f,         -26041.666666f,        -26041.666666f,          -332889.480692411f,
+                                  2083.333333f,          26041.666666f,         -26041.666666f,          332889.48069241f};
+    // Servo parameters
+    int testESC1SignalPin = motors.getESC1SignalPin();
+    int testESC2SignalPin = motors.getESC2SignalPin();
+    int testESC3SignalPin = motors.getESC3SignalPin();
+    int testESC4SignalPin = motors.getESC4SignalPin(); 
+
+    int testM1StartPWM = motors.getM1StartPWM();
+    int testM2StartPWM = motors.getM2StartPWM();
+    int testM3StartPWM = motors.getM3StartPWM();
+    int testM4StartPWM = motors.getM4StartPWM();
+
+    int testMinPWM = motors.getMinPWM();
+    int testMaxPWM = motors.getMaxPWM();
+
+    float testMaxSpinSquare = motors.getMaxSpinSquare();
+ 
+    bool testArmedBool = false; 
+
+
+    TEST_ASSERT_FLOAT_WITHIN(tol, kM, testKM);
+    TEST_ASSERT_FLOAT_WITHIN(tol, kT, testKT);
+    TEST_ASSERT_FLOAT_WITHIN(tol, L, testL);
+    for (int i = 0; i<16; i++) {
+      TEST_ASSERT_FLOAT_WITHIN(1e-2, pInvM[i], testPInvM[i]); //Need looser tolerance here
+    }
+
+    TEST_ASSERT_EQUAL_INT(esc1SignalPin, testESC1SignalPin);
+    TEST_ASSERT_EQUAL_INT(esc2SignalPin, testESC2SignalPin);
+    TEST_ASSERT_EQUAL_INT(esc3SignalPin, testESC3SignalPin);
+    TEST_ASSERT_EQUAL_INT(esc4SignalPin, testESC4SignalPin);
+
+    TEST_ASSERT_EQUAL_INT(M1StartPWM, testM1StartPWM);
+    TEST_ASSERT_EQUAL_INT(M2StartPWM, testM2StartPWM);
+    TEST_ASSERT_EQUAL_INT(M3StartPWM, testM3StartPWM);
+    TEST_ASSERT_EQUAL_INT(M4StartPWM, testM4StartPWM);
+
+    TEST_ASSERT_EQUAL_INT(minPWM, testMinPWM);
+    TEST_ASSERT_EQUAL_INT(maxPWM, testMaxPWM);  
+
+    TEST_ASSERT_FLOAT_WITHIN(tol , maxSpinSquare, testMaxSpinSquare);
+
+    TEST_ASSERT_EQUAL_INT(0, testArmedBool); //Should start off NOT armed
 }
 
 
+void test_controller_motors_interaction() {
+  Vector3f p_hat (0.5f, 0.6f, -0.5f);
+  Vector3f v_hat (0.1f, 0.3f, 0.4f);
+  Quaternion q_hat (0.999986366648586f ,0.00400194643981425f ,  0.0032015571518514f  , 0.00100048660995356f);
+  Vector3f w_hat (0.2f, 0.1f, 0.4f);
+
+
+  std::array<float,4> uk_Test;
+  if (controller.updateControl(30000, p_hat, v_hat, q_hat, w_hat)) { //Provide some large number to get it to update
+    uk_Test = controller.getControl(); 
+  }
+
+  //Already tested that controller works properly, so no need to reverify.
+  motors.commandControl(uk_Test); //Because not armed, this should just update the PWM without doing anything
+  std::array<int,4> pwm_Test = motors.getCurrentMotorPWN();
+
+  std::array<int,4> pwm_Truth = {1304, 1268 ,1308, 1267};
+
+  for (int i = 0; i<4; i++) {
+    TEST_ASSERT_INT_WITHIN(2,pwm_Truth[i],pwm_Test[i]);
+  }
+
+}
 // No setup() or loop()
 // Use UNITY_BEGIN() in special main provided by PlatformIO
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_controller_init);
     RUN_TEST(test_controller_functions);
-
+    RUN_TEST(test_motors_init);
+    RUN_TEST(test_controller_motors_interaction);
     return UNITY_END();
 }

@@ -74,7 +74,7 @@ public:
     * Calculate bias / ref height / ref Lat and Long
     * Checks for GPS lock.
      */
-    void calibrateSensors();
+    void calibrateSensors(int secondsToCalibrateFor);
 
     /**
     * @brief Checks that all sensor parameters have been set properly. Runs checkoutSensors one last time.
@@ -218,7 +218,7 @@ public:
     * 
     * @return this->MagRef_
      */
-    Vector3f getMagRef();
+    Vector3f getMagRefForFilter();
     // -------------------------- Altimeter Functions ------------------------------
     /**
     * @brief Sets the altimeter oversampling settings. Options are:

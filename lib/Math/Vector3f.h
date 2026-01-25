@@ -75,6 +75,9 @@ public:
         return result;
     }
 
+    std::array<float,3> getArray() const {
+        return data_;
+    }
 };
 
 

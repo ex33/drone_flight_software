@@ -20,8 +20,9 @@ class Logger {
 
 public:
   Logger(float logFlushFrequency, float logIMUDataFrequency, float logMagDataFrequency, float logAltDataFrequency, float logGPSDataFrequency, float logGNCDataFrequency,
-    RingBuffer<imuData, IMU_N>& imuBuffer , RingBuffer<magData, MAG_N>& magBuffer ,RingBuffer<altData,ALT_N>& altBuffer ,RingBuffer<gpsData, GPS_N>& gpsBuffer ,RingBuffer<eskfStateData, ESKF_N>& eskfStateBuffer):
-    imuBuffer_(imuBuffer), magBuffer_(magBuffer), altBuffer_(altBuffer), gpsBuffer_(gpsBuffer), eskfStateBuffer_(eskfStateBuffer)
+    RingBuffer<imuData, IMU_N>& imuBuffer, RingBuffer<tiltData, IMU_N>& tiltBuffer, RingBuffer<magData, MAG_N>& magBuffer ,RingBuffer<altData,ALT_N>& altBuffer ,RingBuffer<gpsData, GPS_N>& gpsBuffer,
+    RingBuffer<eskfStateData, ESKF_N>& eskfStateBuffer, RingBuffer<eskfCovarianceData, ESKF_N>& eskfCovarianceBuffer):
+    imuBuffer_(imuBuffer), tiltBuffer_(tiltBuffer), magBuffer_(magBuffer), altBuffer_(altBuffer), gpsBuffer_(gpsBuffer), eskfStateBuffer_(eskfStateBuffer), eskfCovarianceBuffer_(eskfCovarianceBuffer)
   {
     freqFlush_ = CONSTANTS::seconds2milli/logFlushFrequency; 
     freqIMU_ = CONSTANTS::seconds2milli/logIMUDataFrequency; 
@@ -41,25 +42,35 @@ public:
     }
 
     imuFile_ = SD.open("FLIGHT_DATA/imu.csv", FILE_WRITE);
+    tiltFile_ = SD.open("FLIGHT_DATA/tilt.csv", FILE_WRITE);
     magFile_ = SD.open("FLIGHT_DATA/mag.csv", FILE_WRITE);
     altFile_ = SD.open("FLIGHT_DATA/alt.csv", FILE_WRITE);
     gpsFile_ = SD.open("FLIGHT_DATA/gps.csv", FILE_WRITE);
-    eskfFile_ = SD.open("FLIGHT_DATA/eskf.csv", FILE_WRITE);
+    eskfStateFile_ = SD.open("FLIGHT_DATA/eskfState.csv", FILE_WRITE);
+    eskfCovarianceFile_ = SD.open("FLIGHT_DATA/eskfCovariance.csv", FILE_WRITE);
 
     // Write Headers
-    imuFile_.println("t_us,ax,ay,az,gx,gy,gz");
-    magFile_.println("t_us,mx,my,mz");
-    altFile_.println("t_us,p,h");
-    gpsFile_.println("t_us,px,py,vx,vy");
-    eskfFile_.println("t_us,px,py,pz,vx,vy,vz,qw,qx,qy,qz,wx,wy,wz,bax,bay,baz,bgx,bgy,bgz,bmx,bmy,bmz");
+    imuFile_.println("t,aX,aY,aZ,gX,gY,gZ");
+    tiltFile_.println("t,vecX,vecX,vecZ,nisX,nisY,nisZ");
+    magFile_.println("t,mX,mY,mZ,vecX,vecY,vecZ,nisX,nisY,nisZ");
+    altFile_.println("t,p,h,nis");
+    gpsFile_.println("t,px,py,vx,vy,nisPX,nisPY,nisVX,nisVY");
+    eskfStateFile_.println("t,pX,pY,pZ,vX,vY,vZ,qW,qX,qY,qZ,wX,wY,wZ,baX,baY,baZ,bgX,bgY,bgZ,bmX,bmY,bmZ");
+    eskfCovarianceFile_.println("t,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18");
   };
 
-  void logIMU(const uint32_t now, const imuData imuSample) {
+  void logIMU(const uint32_t now, const imuData imuSample, const tiltData tiltSample) {
     if (static_cast<float>(now - lastIMU_) >= freqIMU_) {
       imuBuffer_.push(imuSample);
+
+      if (tiltSample.tiltUsed) {
+        tiltBuffer_.push(tiltSample);
+      }
+
       lastIMU_ = now;
     }
   }
+
 
   void logMag(const uint32_t now, const magData magSample) {
     if (static_cast<float> (now - lastMag_) >= freqMag_) {
@@ -84,15 +95,34 @@ public:
 
   //Since Nav doesn't have its own loop, and logging GNC all at same frequency, just directly pass values into here, form the samples locally, and push to buffer
   void logGNC(const uint32_t now, const float currentTime,
-              const Vector3f& p, const Vector3f& v, const Quaternion& q, const Vector3f& w, const Vector3f& ba, const Vector3f& bg,const Vector3f& bm) {
+              const Vector3f& p, const Vector3f& v, const Quaternion& q, const Vector3f& w, const Vector3f& ba, const Vector3f& bg,const Vector3f& bm, const std::array<float,18>& diagCov) {
     if (static_cast<float> (now - lastGNC_) >= freqGNC_) {
-      eskfStateData eskfSample (currentTime, p, v, q, w, ba, bg, bm);
+      eskfStateData eskfStateSample (currentTime, p, v, q, w, ba, bg, bm);
+      eskfCovarianceData eskfCovarianceSample (currentTime, diagCov);
+      eskfStateBuffer_.push(eskfStateSample);
+      eskfCovarianceBuffer_.push(eskfCovarianceSample);
       //guidanceData guidSample
       // controlData controlSample
       // GuidBuffer.push(target state);
       // ControlBuffer.push(commanded control);
 
-      eskfStateBuffer_.push(eskfSample);
+
+      lastGNC_ = now;
+    }
+  }
+
+  void logGNC(const uint32_t now, const float currentTime,
+              const Vector3f& p, const Vector3f& v, const Quaternion& q, const Vector3f& w,  const std::array<float,9>& diagCov) {
+    if (static_cast<float> (now - lastGNC_) >= freqGNC_) {
+      eskfStateData eskfStateSample (currentTime, p, v, q, w);
+      eskfCovarianceData eskfCovarianceSample (currentTime, diagCov);
+      eskfStateBuffer_.push(eskfStateSample);
+      eskfCovarianceBuffer_.push(eskfCovarianceSample);
+      //guidanceData guidSample
+      // controlData controlSample
+      // GuidBuffer.push(target state);
+      // ControlBuffer.push(commanded control);
+
 
       lastGNC_ = now;
     }
@@ -113,7 +143,7 @@ public:
           imuPosition += snprintf(imuCSVBlock + imuPosition, //Write starting at the current end
                                   imuCSVSize -imuPosition, //Number of characters left. Ensures that the characters being written is LESS than this value.
                                   "%.3f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", //6 decimals for time, ax, ay, az, gx, gy, gz
-                                  imuSample.t_us, imuSample.ax, imuSample.ay, imuSample.az, imuSample.gx, imuSample.gy, imuSample.gz);
+                                  imuSample.time, imuSample.ax, imuSample.ay, imuSample.az, imuSample.gx, imuSample.gy, imuSample.gz);
     }
 
     //Write to IMU file
@@ -121,11 +151,34 @@ public:
     imuFile_.flush();
   }
 
+  void flushTilt() {
+    tiltData tiltSample;
+    static constexpr size_t tiltCSVSize = 1250; //Give extra margin. 
+    // Assume worst case: num_floats * 11 char *  sensor_freq / logger_freq (or logger_freq / sensor_freq if in seconds)
+    static char tiltCSVBlock [tiltCSVSize]; // 7 * 11 * 25/2 ~= 1000 characters
+    // Keep track of current positions inside csvblocks
+    uint16_t tiltPosition = 0;
+
+    //Gets the latest imuSample and increments the tail
+    while (this->tiltBuffer_.pop(tiltSample)) { 
+          // Write to imuCSV (increments imuPosition by number of characters written by snprintf)
+          tiltPosition += snprintf(tiltCSVBlock + tiltPosition, //Write starting at the current end
+                                  tiltCSVSize - tiltPosition, //Number of characters left. Ensures that the characters being written is LESS than this value.
+                                  "%.3f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", //6 decimals for time, ax, ay, az, gx, gy, gz
+                                  tiltSample.time, tiltSample.orientingVector_x, tiltSample.orientingVector_y, tiltSample.orientingVector_z, tiltSample.nis_x, tiltSample.nis_y, tiltSample.nis_z);
+    }
+
+    //Write to Tilt file
+    tiltFile_.write((uint8_t*)tiltCSVBlock, tiltPosition); //Write needs pointer to uint8_t data, and size of bytes
+    tiltFile_.flush();
+  }
+
+
   void flushMag() {
     magData magSample;
-    static constexpr size_t magCSVSize = 750;
+    static constexpr size_t magCSVSize = 1500;
     // Assume worst case: num_floats * 11 char *  sensor_freq / logger_freq (or logger_freq / sensor_freq if in seconds)
-    static char magCSVBlock [magCSVSize]; // 4 * 11 * 25/2 ~= 500 characters
+    static char magCSVBlock [magCSVSize]; // 10 * 11 * 25/2 ~= 500 characters
     // Keep track of current positions inside csvblocks
     uint16_t magPosition = 0;
 
@@ -133,8 +186,8 @@ public:
     while (this->magBuffer_.pop(magSample)) { 
           magPosition += snprintf(magCSVBlock + magPosition, 
                                 magCSVSize -magPosition, 
-                                "%.3f,%.6f,%.6f,%.6f\n", //6 decimals for time, mx, my, mz
-                                magSample.t_us, magSample.mx, magSample.my, magSample.mz);
+                                "%.3f,%.6f,%.6f,%.6f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", //6 decimals for time, mx, my, mz
+                                magSample.time, magSample.mx, magSample.my, magSample.mz, magSample.orientingVector_x, magSample.orientingVector_y, magSample.orientingVector_z, magSample.nis_x, magSample.nis_y, magSample.nis_z);
     }
 
     //Write to Mag file
@@ -146,7 +199,7 @@ public:
     altData altSample;
     static constexpr size_t altCSVSize = 750; //Give extra margin. 
     // Assume worst case: num_floats * 11 char *  sensor_freq / logger_freq (or logger_freq / sensor_freq if in seconds)
-    static char altCSVBlock [altCSVSize]; // 2 * 11  * 25/2 ~= 300 characters
+    static char altCSVBlock [altCSVSize]; // 4 * 11  * 25/2 ~= 300 characters
     // Keep track of current positions inside csvblocks
     uint16_t altPosition = 0;
 
@@ -154,8 +207,8 @@ public:
     while (this->altBuffer_.pop(altSample)) { 
       altPosition += snprintf(altCSVBlock + altPosition, 
                             altCSVSize - altPosition, 
-                            "%.3f,%.6f,%.6f\n", //6 decimals for time, pressure, height
-                            altSample.t_us, altSample.pressure, altSample.height);
+                            "%.3f,%.6f,%.6f,%.6f\n", //6 decimals for time, pressure, height
+                            altSample.time, altSample.pressure, altSample.height, altSample.nis);
     }
 
     //Write to Alt file
@@ -176,7 +229,7 @@ public:
   //     gpsPosition += snprintf(gpsCSVBlock + gpsPosition, 
   //                           gpsCSVSize - gpsPosition, 
   //                           "%.3f,%.6f,%.6f,%.6f\n" //6 decimals for time, lat,long, 
-  //                           gpsSample.t_us, gpsSample.h);
+  //                           gpsSample.time, gpsSample.h);
   //   }
 
   //   //Write to GPS file
@@ -185,32 +238,49 @@ public:
   // }
 
   void flushESKF() {
-    eskfStateData eskfSample;
-    static constexpr size_t eskfCSVSize = 1500;
+    eskfStateData eskfStateSample;
+    eskfCovarianceData eskfCovarianceSample;
+    static constexpr size_t eskfStateCSVSize = 1500;
+    static constexpr size_t eskfCovarianceCSVSize = 1250;
     // Assume worst case: num_floats * 11 char *  sensor_freq / logger_freq (or logger_freq / sensor_freq if in seconds)
-    static char eskfCSVBlock [eskfCSVSize]; // 23 * 11 * 10/2 ~= 1265 characters (log this SLOWER or at controller frequency since we just need enough to reconstruct trajectory)
+    static char eskfStateCSVBlock [eskfStateCSVSize]; // 23 * 11 * 10/2 ~= 1265 characters (log this SLOWER or at controller frequency since we just need enough to reconstruct trajectory)
+    static char eskfCovarianceCSVBlock [eskfCovarianceCSVSize];
     // Keep track of current positions inside csvblocks
-    uint16_t eskfPosition = 0;
+    uint16_t eskfStatePosition = 0;
+    uint16_t eskfCovariancePosition = 0;
 
     //Gets the latest imuSample and increments the tail
-    while (this->eskfStateBuffer_.pop(eskfSample)) { 
-      eskfPosition += snprintf(eskfCSVBlock + eskfPosition, 
-                            eskfCSVSize - eskfPosition, 
+    while (this->eskfStateBuffer_.pop(eskfStateSample)) { 
+      eskfStatePosition += snprintf(eskfStateCSVBlock + eskfStatePosition, 
+                            eskfStateCSVSize - eskfStatePosition, 
                             "%.3f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", 
-                            eskfSample.t_us, 
-                            eskfSample.px,eskfSample.py, eskfSample.pz,
-                            eskfSample.vx, eskfSample.vy, eskfSample.vz,
-                            eskfSample.qw, eskfSample.qx, eskfSample.qy, eskfSample.qz,
-                            eskfSample.wx, eskfSample.wy, eskfSample.wz,
-                            eskfSample.ba_x, eskfSample.ba_y, eskfSample.ba_z,
-                            eskfSample.bg_x, eskfSample.bg_y, eskfSample.bg_z,
-                            eskfSample.bm_x, eskfSample.bm_y, eskfSample.bm_z);
+                            eskfStateSample.time, 
+                            eskfStateSample.px,eskfStateSample.py, eskfStateSample.pz,
+                            eskfStateSample.vx, eskfStateSample.vy, eskfStateSample.vz,
+                            eskfStateSample.qw, eskfStateSample.qx, eskfStateSample.qy, eskfStateSample.qz,
+                            eskfStateSample.wx, eskfStateSample.wy, eskfStateSample.wz,
+                            eskfStateSample.ba_x, eskfStateSample.ba_y, eskfStateSample.ba_z,
+                            eskfStateSample.bg_x, eskfStateSample.bg_y, eskfStateSample.bg_z,
+                            eskfStateSample.bm_x, eskfStateSample.bm_y, eskfStateSample.bm_z);
     }
+    eskfStateFile_.write((uint8_t*)eskfStateCSVBlock, eskfStatePosition); //Write needs pointer to uint8_t data, and size of bytes
+    eskfStateFile_.flush();
 
-    //Write to ESKF file
-    // Might need a seperate file for covariance
-    eskfFile_.write((uint8_t*)eskfCSVBlock, eskfPosition); //Write needs pointer to uint8_t data, and size of bytes
-    eskfFile_.flush();
+    while (this->eskfCovarianceBuffer_.pop(eskfCovarianceSample)) { 
+      eskfCovariancePosition += snprintf(eskfCovarianceCSVBlock + eskfCovariancePosition, 
+                            eskfCovarianceCSVSize - eskfCovariancePosition, 
+                            "%.3f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", 
+                            eskfStateSample.time, 
+                            eskfCovarianceSample.P1,eskfCovarianceSample.P2,eskfCovarianceSample.P3,
+                            eskfCovarianceSample.P4,eskfCovarianceSample.P5,eskfCovarianceSample.P6,
+                            eskfCovarianceSample.P7,eskfCovarianceSample.P8,eskfCovarianceSample.P9,
+                            eskfCovarianceSample.P10,eskfCovarianceSample.P11,eskfCovarianceSample.P12,
+                            eskfCovarianceSample.P13,eskfCovarianceSample.P14,eskfCovarianceSample.P15,
+                            eskfCovarianceSample.P16,eskfCovarianceSample.P17,eskfCovarianceSample.P18 );
+    }
+    eskfCovarianceFile_.write((uint8_t*)eskfCovarianceCSVBlock, eskfCovariancePosition); //Write needs pointer to uint8_t data, and size of bytes
+    eskfCovarianceFile_.flush();
+
   }
 
 
@@ -222,6 +292,7 @@ public:
       if (static_cast<float>(now - this->lastLog_) >= this->freqFlush_){
         //Break them up into functions to have more ram on the stack
         flushIMU();
+        flushTilt();
         flushMag();
         flushAlt();
         flushESKF();
@@ -246,17 +317,21 @@ private:
 
   //Buffers
   RingBuffer<imuData, IMU_N>& imuBuffer_;
+  RingBuffer<tiltData, IMU_N>& tiltBuffer_;
   RingBuffer<magData,MAG_N>& magBuffer_;
   RingBuffer<altData,ALT_N>& altBuffer_;
   RingBuffer<gpsData,GPS_N>& gpsBuffer_;
   RingBuffer<eskfStateData,ESKF_N>& eskfStateBuffer_;
+  RingBuffer<eskfCovarianceData,ESKF_N>& eskfCovarianceBuffer_;
 
   // Files
   File imuFile_;
+  File tiltFile_;
   File magFile_;
   File altFile_;
   File gpsFile_;
-  File eskfFile_;
+  File eskfStateFile_;
+  File eskfCovarianceFile_;
 
 
   //Timer related 

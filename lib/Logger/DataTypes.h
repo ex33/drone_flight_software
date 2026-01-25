@@ -7,20 +7,17 @@
 
 //IMU Data
 struct imuData {
-  float t_us; // Time elasped in seconds
+  float time; // Time elasped in seconds
   float ax, ay, az; //Accelerometer
   float gx, gy, gz;  //Gyro
 
+
   // Default constructor
-  imuData() : t_us(0), ax(0), ay(0), az(0), gx(0), gy(0), gz(0) {}
+  imuData() : time(0), ax(0), ay(0), az(0), gx(0), gy(0), gz(0){}
 
-  // Constructor from time and array
-  imuData(float t, const std::array<float,6>& imuMeas) {
-      setData(t, imuMeas);
-  }
 
-  void setData(float t, const std::array<float,6>& imuMeas) {
-    this->t_us = t;
+  imuData(const float flightTime, const std::array<float,6>& imuMeas) {
+    this->time = flightTime;
     this->ax = imuMeas[0];
     this->ay = imuMeas[1];
     this->az = imuMeas[2];
@@ -30,24 +27,59 @@ struct imuData {
   }
 };
 
-//Magnetometer Data
-struct magData {
-  float t_us; // Time elasped in seconds
-  float mx, my, mz; //Magnetometer
+
+struct tiltData {
+  float time; // Time elasped in seconds
+  bool tiltUsed; 
+  float orientingVector_x, orientingVector_y, orientingVector_z; //tilt
+  float nis_x, nis_y, nis_z;
 
   // Default constructor
-  magData() : t_us(0), mx(0), my(0), mz(0) {}
+  tiltData() : time(0), tiltUsed(0), orientingVector_x(0), orientingVector_y(0), orientingVector_z(0), nis_x(0), nis_y(0), nis_z(0) {}
 
-  // Constructor from time and array
-  magData(float t, const std::array<float,3>& magMeas) {
-      setData(t, magMeas);
-  }
 
-  void setData(float t, const std::array<float,3>& magMeas) {
-    this->t_us = t;
+  void setData(const std::array<float,3>& orientingVectorUsed, const std::array<float,3>& NIS){
+  this->tiltUsed = 1; 
+  this->orientingVector_x = orientingVectorUsed[0];
+  this->orientingVector_y = orientingVectorUsed[1];
+  this->orientingVector_z = orientingVectorUsed[2];
+  this->nis_x = NIS[0];
+  this->nis_y = NIS[1];
+  this->nis_z = NIS[2];
+  };
+
+  void tagData(const float flightTime) {
+    this->time = flightTime;
+  };
+
+};
+
+//Magnetometer Data
+struct magData {
+  float time; // Time elasped in seconds
+  float mx, my, mz; //Processed Magnetometer
+  float orientingVector_x, orientingVector_y, orientingVector_z; //yaw
+  float nis_x, nis_y, nis_z;
+
+  // Default constructor
+  magData() : time(0), mx(0), my(0), mz(0), orientingVector_x(0), orientingVector_y(0), orientingVector_z(0), nis_x(0), nis_y(0), nis_z(0) {}
+
+
+
+  void setData(const std::array<float,3>& magMeas, const std::array<float,3>& orientingVectorUsed, const std::array<float,3>& NIS) {
     this->mx = magMeas[0];
     this->my = magMeas[1];
     this->mz = magMeas[2];
+    this->orientingVector_x = orientingVectorUsed[0];
+    this->orientingVector_y = orientingVectorUsed[1];
+    this->orientingVector_z = orientingVectorUsed[2];
+    this->nis_x = NIS[0];
+    this->nis_y = NIS[1];
+    this->nis_z = NIS[2];
+  }
+
+  void tagData(float flightTime) {
+    this->time = flightTime;
   }
 
 };
@@ -55,55 +87,58 @@ struct magData {
 
 // Altiemter Data
 struct altData {
-  float t_us; // Time elasped in seconds
+  float time; // Time elasped in seconds
   float pressure; 
   float height;
-
+  float nis;
   // Default constructor
-  altData() : t_us(0),pressure(0) , height(0){}
+  altData() : time(0),pressure(0) , height(0), nis(0) {}
 
-  // Constructor from time and array
-  altData(float t, const float& pressureMeas, const float& heightMeas) {
-      setData(t, pressureMeas, heightMeas);
+  void setPressureData(const float& p) {
+    this->pressure = p;
   }
 
-  void setData(float t, const float& pressureMeas, const float& heightMeas) {
-    this->t_us = t;
-    this->pressure = pressureMeas;
-    this->height = heightMeas;
+  void setData(const float& h, const float& NIS) {
+    this->height = h;
+    this->nis = NIS;
+  }
+
+  void tagData(float flightTime) {
+    this->time = flightTime;
   }
 
 };
 
 // GPS Data
 struct gpsData {
-  float t_us;// Time elasped in seconds
+  float time;// Time elasped in seconds
   float px, py, vx, vy; //Change this to log RAW Measurements
+  float nis_px, nis_py, nis_vx, nis_vy;
 
   // Default constructor
-  gpsData() : t_us(0), px(0), py(0), vx(0), vy(0){}
+  gpsData() : time(0), px(0), py(0), vx(0), vy(0), nis_px(0), nis_py(0), nis_vx(0), nis_vy(0){}
 
-  //TODO:: Implement after settling on what gpsdata should contain
-  // // Constructor from time and array
-  // gpsData(float t, const std::array<float,4>& gpsMeas) {
-  //     setData(t, imuMeas);
-  // }
+  void setData(const std::array<float,4>& gpsMeas, const std::array<float,4>& NIS) {
+    this->px = gpsMeas[0];
+    this->py = gpsMeas[1];
+    this->vx = gpsMeas[2];
+    this->vy = gpsMeas[3];
+    this->nis_px = NIS[0];
+    this->nis_py = NIS[1];
+    this->nis_vx = NIS[2];
+    this->nis_vy = NIS[3];
+  }
 
-  // void setData(float t, const std::array<float,6>& imuMeas) {
-  //   this->t_us = t;
-  //   this->ax = imuMeas[0];
-  //   this->ay = imuMeas[1];
-  //   this->az = imuMeas[2];
-  //   this->gx = imuMeas[3];
-  //   this->gy = imuMeas[4];
-  //   this->gz = imuMeas[5];
-  // }
+  void tagData(float flightTime) {
+    this->time = flightTime;
+  }
+
 
 };
 
 // Estimation
 struct eskfStateData {
-  float t_us; // Time elasped in seconds
+  float time; // Time elasped in seconds
   // Position
   float px, py, pz;
   // Velocity
@@ -121,7 +156,7 @@ struct eskfStateData {
 
   // Default constructor
   eskfStateData()
-      : t_us(0), px(0), py(0), pz(0),
+      : time(0), px(0), py(0), pz(0),
         vx(0), vy(0), vz(0),
         qw(1), qx(0), qy(0), qz(0),
         wx(0), wy(0), wz(0),
@@ -132,7 +167,7 @@ struct eskfStateData {
     // Constructor from individual states
     eskfStateData(float t, const Vector3f& p, const Vector3f& v, const Quaternion& q,
              const Vector3f& w, const Vector3f& ba, const Vector3f& bg, const Vector3f& bm)
-        : t_us(t),
+        : time(t),
           px(p[0]), py(p[1]), pz(p[2]),
           vx(v[0]), vy(v[1]), vz(v[2]),
           qw(q.w()), qx(q.x()), qy(q.y()), qz(q.z()),
@@ -140,11 +175,17 @@ struct eskfStateData {
           ba_x(ba[0]), ba_y(ba[1]), ba_z(ba[2]),
           bg_x(bg[0]), bg_y(bg[1]), bg_z(bg[2]),
           bm_x(bm[0]), bm_y(bm[1]), bm_z(bm[2]) {}
+    eskfStateData(float t, const Vector3f& p, const Vector3f& v, const Quaternion& q,
+             const Vector3f& w)
+        : time(t),
+          px(p[0]), py(p[1]), pz(p[2]),
+          vx(v[0]), vy(v[1]), vz(v[2]),
+          qw(q.w()), qx(q.x()), qy(q.y()), qz(q.z()),
+          wx(w[0]), wy(w[1]), wz(w[2]){}
 
-    // Optional: setData function
     void setData(float t, const Vector3f& p, const Vector3f& v, const Quaternion& q,
                  const Vector3f& w, const Vector3f& ba, const Vector3f& bg, const Vector3f& bm) {
-        t_us = t;
+        time = t;
         px = p[0]; py = p[1]; pz = p[2];
         vx = v[0]; vy = v[1]; vz = v[2];
         qw = q.w(); qx = q.x(); qy = q.y(); qz = q.z();
@@ -153,30 +194,48 @@ struct eskfStateData {
         bg_x = bg[0]; bg_y = bg[1]; bg_z = bg[2];
         bm_x = bm[0]; bm_y = bm[1]; bm_z = bm[2];
     }
+
+    void setData(float t, const Vector3f& p, const Vector3f& v, const Quaternion& q,
+                 const Vector3f& w) {
+        time = t;
+        px = p[0]; py = p[1]; pz = p[2];
+        vx = v[0]; vy = v[1]; vz = v[2];
+        qw = q.w(); qx = q.x(); qy = q.y(); qz = q.z();
+        wx = w[0]; wy = w[1]; wz = w[2];
+    }
+
 };
 
 struct eskfCovarianceData {
-  float t_us; // Time elasped in seconds
+  float time; // Time elasped in seconds
   // Covariance (Only Save Diagonal)
-  float P1, P2, P3;
-  // Velocity
-  float P4, P5, P6;
-  // Orientation 
-  float P7, P8, P9;
-  // Accelerometer bias
-  float  P10, P11, P12;
-  // Gyro bias
-  float P13, P14, P15;
-  // Magnetometer bias
-  float P16, P17, P18;
-
-  // NIS Data
+  float P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, P15, P16, P17, P18;
 
 
-  // Innovation (Sensor)
+  // Default constructor
+  eskfCovarianceData()
+      : time(0), P1(0), P2(0), P3(0),
+        P4(0), P5(0), P6(0),
+        P7(0), P8(0), P9(0), 
+        P10(0),P11(0), P12(0), 
+        P13(0),P14(0), P15(0),
+        P16(0),P17(0), P18(0){};
+        
+    eskfCovarianceData(float t, const std::array<float,18>& P_diag)
+        : time(t),
+        P1(P_diag[0]), P2(P_diag[1]), P3(P_diag[2]),
+        P4(P_diag[3]), P5(P_diag[4]), P6(P_diag[5]),
+        P7(P_diag[6]), P8(P_diag[7]), P9(P_diag[8]), 
+        P10(P_diag[9]),P11(P_diag[10]), P12(P_diag[11]), 
+        P13(P_diag[12]),P14(P_diag[13]), P15(P_diag[14]),
+        P16(P_diag[15]),P17(P_diag[16]), P18(P_diag[17]){};
 
-  // Other data to save down.
 
+    eskfCovarianceData(float t, const std::array<float,9>& P_diag)
+        : time(t),
+        P1(P_diag[0]), P2(P_diag[1]), P3(P_diag[2]),
+        P4(P_diag[3]), P5(P_diag[4]), P6(P_diag[5]),
+        P7(P_diag[6]), P8(P_diag[7]), P9(P_diag[8]){};
 };
 
 #endif

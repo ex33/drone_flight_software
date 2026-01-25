@@ -108,8 +108,12 @@ public:
         return result;
     }
 
-        
-    
+    std::array<float, 18> getDiagonal() const {
+        std::array<float, 18> diag{};
+        for (int i = 0; i < 18; ++i)
+            diag[i] = elements_[i * 18 + i];
+        return diag;
+    }
 
 };
 #endif

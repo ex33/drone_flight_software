@@ -7,11 +7,11 @@
 #include <Servo.h> //Motor PWM command generation
 //===== User / Custom =====
 #include <Mathpk.h>
-#include "FSM.h"
+#include "FiniteStateMachine.h"
 #include "Sensors.h"
-#include "ESKF.h"
+#include "ErrorStateKalmanFilter.h"
 #include "Controller.h"
-#include "Motor.h"
+#include "Motors.h"
 #include "SetUp.h"
 #include "Logger.h" //Includes RingBuffer and DataTypes
 
@@ -25,27 +25,36 @@
 Sensors sensors(SETUP::imuFrequency, SETUP::magFrequency, SETUP::altFrequency, SETUP::gpsFrequency, SETUP::gpsSerial); //GPS connected to port 8
 
 //============================ESKF============================
-ESKF eskf(SETUP::p0, SETUP::v0, SETUP::q0, SETUP::ba0, SETUP::bg0, SETUP::bm0, 
-          SETUP::P0, 
-          SETUP::sig_acc, SETUP::sig_gyro, SETUP::eta_acc, SETUP::eta_gyro, SETUP::eta_mag,
-          SETUP::sig_mag, SETUP::sig_tilt, SETUP::sig_alt, SETUP::sig_gps_pos, SETUP::sig_gps_vel);
+// ESKFBias eskf(SETUP::p0, SETUP::v0, SETUP::q0, SETUP::ba0, SETUP::bg0, SETUP::bm0, 
+//             SETUP::P0, 
+//             SETUP::sig_acc, SETUP::sig_gyro, SETUP::eta_acc, SETUP::eta_gyro, SETUP::eta_mag,
+//             SETUP::sig_mag, SETUP::sig_tilt, SETUP::sig_alt, SETUP::sig_gps_pos, SETUP::sig_gps_vel);
+
+ErrorStateKalmanFilter eskf(SETUP::p0, SETUP::v0, SETUP::q0,
+                          SETUP::P0, 
+                          SETUP::sig_acc, SETUP::sig_gyro, 
+                          SETUP::sig_mag, SETUP::sig_tilt, SETUP::sig_alt, SETUP::sig_gps_pos, SETUP::sig_gps_vel, SETUP::nis_gating_flag);
 
 //============================CONTROLLER============================
 Controller controller(SETUP::controlFrequency, SETUP::pRef, SETUP::vRef, SETUP::qRef, SETUP::wRef, SETUP::uRef, SETUP::K, SETUP::horizontalControllerFlag, SETUP::verticalControllerFlag); //Initialize with a constant reference. Will be updated by Guidance if necessary in Loop
 //============================MOTOR============================
-Motors motors(SETUP::esc1SignalPin, SETUP::esc2SignalPin, SETUP::esc3SignalPin, SETUP::esc4SignalPin,
+Motors motors(SETUP::kT, SETUP::kM, SETUP::L,
+            SETUP::esc1SignalPin, SETUP::esc2SignalPin, SETUP::esc3SignalPin, SETUP::esc4SignalPin,
             SETUP::M1StartPWM, SETUP::M2StartPWM, SETUP::M3StartPWM, SETUP::M4StartPWM, 
-            SETUP::minPWM, SETUP::maxPWM, SETUP::maxSpin);
+            SETUP::minPWM, SETUP::maxPWM, SETUP::saturationPWM, SETUP::maxSpinSquare); 
 
+//============================FINITE STATE MACHINE============================
+FiniteStateMachine fsm(SETUP::imuFrequency); //Defaults to BOOT Mode
 
 //============================LOGGERS/BUFFERS============================
 //Set up Ringbuffers
 RingBuffer<imuData, SETUP::imuRingBufferSize> imuBuffer; 
+RingBuffer<tiltData, SETUP::tiltRingBufferSize> tiltBuffer; 
 RingBuffer<magData, SETUP::magRingBufferSize> magBuffer; 
 RingBuffer<altData, SETUP::altRingBufferSize> altBuffer; 
 RingBuffer<gpsData, SETUP::gpsRingBufferSize> gpsBuffer; 
 RingBuffer<eskfStateData, SETUP::eskfStateRingBufferSize> eskfStateBuffer; 
-
+RingBuffer<eskfCovarianceData, SETUP::eskfStateRingBufferSize> eskfCovarianceBuffer; 
 
 //Set up Logger(Templated on size of buffers)
 Logger<SETUP::imuRingBufferSize, 
@@ -53,14 +62,20 @@ Logger<SETUP::imuRingBufferSize,
       SETUP::altRingBufferSize, 
       SETUP::gpsRingBufferSize, 
       SETUP::eskfStateRingBufferSize> logger(SETUP::logFlushFrequency,SETUP::logIMUDataFrequency, SETUP::logMagDataFrequency, SETUP::logAltDataFrequency, SETUP::logGPSDataFrequency, SETUP::logGNCDataFrequency,
-                                        imuBuffer, magBuffer, altBuffer, gpsBuffer, eskfStateBuffer);
+                                        imuBuffer, tiltBuffer, magBuffer, altBuffer, gpsBuffer, eskfStateBuffer, eskfCovarianceBuffer);
 
 //============================TIMING============================
-float initial_time; //Get the time setup() finishes at. For logging so we are saving in SECONDS, which should take up less bytes
-float current_time; //This is what is saved for loggers when post processsing. 
-float loop_start_time; //Keeps track of time at the start of loop when calling all functions
+uint32_t initial_time; //Get the time setup() finishes at.  [unit32_t because this calls on millis()]
+
+uint32_t loop_start_time; //Keeps track of time at the start of loop when calling all functions [unit32_t because this calls on millis()]
+
+float current_time; //This is what is saved for loggers when post processsing.  [float because this converts milli-seconds into seconds for logging]
+//Debug
+uint16_t lastPrint = 0;
+float printFreq = 20.0;
 
 
+int counter = 0;
 void preflightCheck() {
   Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
   while (!Serial) {
@@ -96,10 +111,10 @@ void preflightCheck() {
   digitalWrite(LED_BUILTIN, HIGH); // High to let us know its calibrating
   Serial.println("Calibrating Sensors...");
 
-  sensors.calibrateSensors(); // Get IMU Bias, checks GPS lock
+  sensors.calibrateSensors(5); // Get IMU Bias, checks GPS lock
 
   // Pass Magnetometer Reference to ESKF. Either user defined, or from sensor calibration
-  eskf.setMagRef(sensors.getMagRef());
+  eskf.setMagRef(sensors.getMagRefForFilter());
 
   // for (int i=0; i<5; i++) { //Rapid blinks to tell us this is done
 
@@ -109,58 +124,41 @@ void preflightCheck() {
   //   delay(500);
   // }
 
-  // // Start Motors
-  // Serial.println("Setting up Motors ...");
-  // motor1CW.attach(SETUP::esc1SignalPin, SETUP::minPWM, SETUP::maxPWM);
-  // motor2CCW.attach(SETUP::esc2SignalPin, SETUP::minPWM, SETUP::maxPWM);
-  // motor3CW.attach(SETUP::esc3SignalPin, SETUP::minPWM, SETUP::maxPWM);
-  // motor4CCW.attach(SETUP::esc4SignalPin, SETUP::minPWM, SETUP::maxPWM);
-
-  // motor1CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
-  // motor2CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
-  // motor3CW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
-  // motor4CCW.writeMicroseconds(SETUP::minPWM); //Minimum throttle
-
-
+  //motors.setUp();
+  //motors.arm(); //Eventually move this to be the very last thing to occur after checking through
   // // Do some delay before the start
 
-  // //Use Built in LED to show that we are starting...
-  // for (int i=0; i<5; i++) {
-  //   digitalWrite(LED_BUILTIN, HIGH);
-  //   delay(1000);
-  //   digitalWrite(LED_BUILTIN, LOW);
-  //   delay(1000);
-  // }
-  Serial.println("Starting ...");
 
-  // // while(1) {};
-  // // delay(2000);
 
   logger.begin(); //Start logger
   initial_time = millis(); //Set initial Time before starting.
+
+
+  fsm.preflightCheckStatus(millis(), true); //Transitions into Idle mode
 }
 
 
 // ============================ Actual Setup and Loop Calls ============================
 
 
-
-
-
 void setup() {
   //Setup helper functions (mostly for calibration and testing)
   //SETUP::SETUP_Offboard_Calibration(sensors);
-  //SETUP::SETUP_Calibrate_M1(motor1CW);
-  //SETUP::SETUP_Calibrate_M2(motor2CCW);
-  //SETUP::SETUP_Calibrate_M3(motor3CW);
-  //SETUP::SETUP_Calibrate_M4(motor4CCW);
+  //SETUP::SETUP_Calibrate_Motor_Individual(motors,1);
+  //SETUP::SETUP_Calibrate_Motor_Individual(motors,2);
+  //SETUP::SETUP_Calibrate_Motor_Individual(motors,3);
+  //SETUP::SETUP_Calibrate_Motor_Individual(motors,4);
   
-  //SETUP::SETUP_Find_Motors_Start(motor1CW, motor2CCW, motor3CW, motor4CCW);
-  //SETUP::SETUP_Find_Motor_Directions(motor1CW, motor2CCW, motor3CW, motor4CCW);
-  //SETUP::SETUP_Test_Sensors_Motors(sensors, motor1CW, motor2CCW, motor3CW, motor4CCW);
-  SETUP::SETUP_AllanVariance(sensors);
+  //SETUP::SETUP_Find_Motors_Start(motors);
+  //SETUP::SETUP_Find_Motor_Directions(motors);
+  //SETUP::SETUP_Test_Sensors_Motors(sensors, motors);
+  //SETUP::SETUP_AllanVariance(sensors);
+  //SETUP::SETUP_Find_Motor_Max_Spin(motors);
   
-  //preflightCheck();
+  //SETUP::SETUP_Find_Thrust_Constant(motors,1573);
+  preflightCheck();
+
+
 }
 
 void loop() {
@@ -180,12 +178,16 @@ void loop() {
     std::array<float,6> imuMeas = sensors.processIMUMeas(imuMeasRaw);
     //Predict forward state using IMU
     eskf.predict(imuMeas, loop_start_time);
-    // Update State Estimate with Tilt if magnitude of acceleration is small enough
-    eskf.updateTiltMeas(std::array<float,3> {imuMeas[0], imuMeas[1], imuMeas[2]}); 
     //Set up Data Samples for logging
     imuData imuSample (current_time, imuMeas); //Raw imu measurement isn't super helpful
+
+    // Update State Estimate with Tilt if magnitude of acceleration is small enough
+    tiltData tiltSample = eskf.updateTiltMeas(std::array<float,3> {imuMeas[0], imuMeas[1], imuMeas[2]});
+    tiltSample.tagData(current_time); //Tag the current time here
+
     //Push to Buffer (Frequency determined by SETUP::logIMUDataFrequency)
-    logger.logIMU(loop_start_time, imuSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
+    logger.logIMU(loop_start_time, imuSample, tiltSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
+
   }
 
   //-------Magnetometer Loop (Frequency Determined by SETUP::magFrequency)--------
@@ -195,13 +197,22 @@ void loop() {
     // Process Measurement
     std::array<float,3> magMeas = sensors.processMagMeas(magMeasRaw);
     // Update State Estimate with Magnetometer (tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable)
-    eskf.updateMagMeas(magMeas);
-    //Set up Data Samples for logging
-    magData magSample (current_time, magMeas); // For mag, raw measurement isn't super helpful
+    // if (counter == 0) {
+    //   Serial.print(magMeas[0]); Serial.print(",");
+    //   Serial.print(magMeas[1]); Serial.print(",");
+    //   Serial.print(magMeas[2]); Serial.print(",");
+    //   Vector3f testMagRef = sensors.getMagRefForFilter();
+    //   Serial.print(testMagRef[0]); Serial.print(",");
+    //   Serial.print(testMagRef[1]); Serial.print(",");
+    //   Serial.print(testMagRef[2]); Serial.print(",");
+    //   counter +=1;
+    // };
+    magData magSample = eskf.updateMagMeas(magMeas);
+    magSample.tagData(current_time); //Tag the current time here
+
     //Push to Buffer (Frequency determined by SETUP::logMagDataFrequency)
     logger.logMag(loop_start_time, magSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
   }
-
   //-------Altimeter Loop (Frequency Determined by SETUP::altFrequency)--------
   if (sensors.altUpdate(loop_start_time)) {
     // Obtain RAW measurements
@@ -209,9 +220,11 @@ void loop() {
     // Process Measurement
     float altMeas = sensors.processAltMeas(altMeasRaw);
     // Update State Estimate with Altimeter (tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable)
-    eskf.updateAltMeas(altMeas);
-    //Set up Data Samples for logging
-    altData altSample (current_time, altMeasRaw, altMeas); 
+    altData altSample = eskf.updateAltMeas(altMeas);
+
+    altSample.setPressureData(altMeasRaw); //Save down the pressure
+    altSample.tagData(current_time); //Tag the current time here
+
     //Push to Buffer (Frequency determined by SETUP::logAltDataFrequency)
     logger.logAlt(loop_start_time, altSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
   }
@@ -223,35 +236,49 @@ void loop() {
       std::array<double,5> gpsMeasRaw = sensors.getGPSMeas();
       std::array<float,4> gpsMeas = sensors.processGPSMeas(gpsMeasRaw,-eskf.getPosition()[2]); //Get the best estimate of altitude, which is just our UP direction (negative of Z axis)
       //Tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable. 
-      eskf.updateGPSMeas(gpsMeas);
+      gpsData gpsSample = eskf.updateGPSMeas(gpsMeas);
       //Push Meas to buffer / ram
-      gpsData gpsSample; 
-
     }
   }
-
-  // Running Rest of GNC...
-  // Frequencies should be... eskf >= controller > guidance
-  // Eskf needs to run fastest since state can be used for switching modes
-  // Controller can run at a slower rate as long as stable 
-  // Guidance can run slowest since that is usually just updating waypoints
-
   //-------Update Estimated State (Not really via loops)--------
   eskf.injectError(); // Inject Error of the eskf if there were any updates (uses a flag internally here)
+  // if (static_cast<float>(loop_start_time - lastPrint) >= CONSTANTS::seconds2milli/printFreq) {
+  //   lastPrint = loop_start_time;
+  //   eskf.printStates();
+  // }
+
+  //-------- Run Finite State Machine ---------
+  fsm.update(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates());
 
   // GUID Runs here. FOr now, not really running anything
 
-  // Control / Motor
-  if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates())) {
-    std::array<float,4> uCMD = controller.getControl();
-    //Serial.println() To test at first, just print out the controller and make sure it increases / decreases as it tilts
-    // motor.updatePWM(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to 0-100
-  }
- 
-  // Save down buffer for guidance control and navigation all at the (Frequency determined by SETUP::logGNCDataFrequency)
-  logger.logGNC(loop_start_time, current_time, 
-                eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getAccelBias(), eskf.getGyroBias(), eskf.getMagBias());
 
+  // Control / Motor
+  if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates()) && fsm.getControlFlag()) {
+    std::array<float,4> uCMD = controller.getControl();
+    // Serial.print(uCMD[0]);
+    // Serial.print(", ");
+    // Serial.print(uCMD[1]);
+    // Serial.print(", ");
+    // Serial.print(uCMD[2]);
+    // Serial.print(", ");
+    // Serial.println(uCMD[3]);
+
+    motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
+    motors.printPWMCMD(); //Debugging
+
+  }
+
+
+  // if (!fsm.getMotorFlag()) { //Disarm motors
+  //   motors.disarm();
+  // }
+
+  // Save down buffer for guidance control and navigation all at the (Frequency determined by SETUP::logGNCDataFrequency)
+  // logger.logGNC(loop_start_time, current_time, 
+  //              eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getAccelBias(), eskf.getGyroBias(), eskf.getMagBias(), eskf.getCovariance().getDiagonal());
+  logger.logGNC(loop_start_time, current_time, 
+               eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getCovariance().getDiagonal());
 
   // Flush log (Frequency determined by SETUP::logFlushFrequency)
   logger.flush(loop_start_time);

@@ -15,6 +15,21 @@ Controller::Controller(const float& freq,
   };
 
 
+void Controller::updateRef(const Vector3f& positionReference,const Vector3f& velocityReference,const Quaternion& quaternionReference,const Vector3f& rateReference){
+  this->posRef_ = positionReference;
+  this->velRef_ = velocityReference;
+  this->quatRef_ = quaternionReference;
+  this->rateRef_ = rateReference;
+};
+
+
+void Controller::updateRef(const Vector3f& positionReference,const Vector3f& velocityReference,const Quaternion& quaternionReference,const Vector3f& rateReference, const std::array<float,4>& controlReference){
+  this->posRef_ = positionReference;
+  this->velRef_ = velocityReference;
+  this->quatRef_ = quaternionReference;
+  this->rateRef_ = rateReference;
+  this->uRef_ = controlReference;
+};
 
 void Controller::updateRef(const Vector3f& positionReference,const Vector3f& velocityReference,const Quaternion& quaternionReference,const Vector3f& rateReference, const std::array<float,4>& controlReference,const std::array<float,48> K){
   this->posRef_ = positionReference;
@@ -22,6 +37,7 @@ void Controller::updateRef(const Vector3f& positionReference,const Vector3f& vel
   this->quatRef_ = quaternionReference;
   this->rateRef_ = rateReference;
   this->uRef_ = controlReference;
+  this->K_ = K;
 };
 
 
@@ -53,7 +69,6 @@ bool Controller::updateControl( uint32_t now, const Vector3f& p_hat, const Vecto
 
     //. Check if we are running any position controller
     if (!this->verticalControllerFlag_) { //If Distabled
-      uRef = {0.0f, 0.0f, 0.0f, 0.0f};
       xErr[2] = 0.0f;
       xErr[5] = 0.0f;
     };

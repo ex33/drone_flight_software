@@ -118,7 +118,7 @@ void Sensors::finalCheckOut() {
 
 }
 
-void Sensors::calibrateSensors() {
+void Sensors::calibrateSensors(int total_seconds_for_calibration) {
     // Use this to calibrate...
     // IMU --> Start up biases for accelerometer / gyro
     // Altimeter --> Starting altitude for reference
@@ -193,7 +193,6 @@ void Sensors::calibrateSensors() {
 
     // Counter to keep track of how many altimeter measurements to ignore. 
     int ignoreAltMeas = 0; 
-    int total_seconds_for_calibration = 30;
     unsigned long static_calibration_start = millis();
     unsigned long static_calibration_now = millis();
     unsigned long time_in_static_calibration = static_calibration_now - static_calibration_start;
@@ -553,8 +552,8 @@ std::array<float,3> Sensors::processMagMeas(std::array<float,3> magMeas){
     return std::array<float,3> {magBody[0], magBody[1], magBody[2]};
 }
 
-Vector3f Sensors::getMagRef() {
-    return this->magRef_;
+Vector3f Sensors::getMagRefForFilter() {
+    return this->rotBody2Mag_.transpose() * this->magRef_; //Filter expects this in the body frame
 };
 
 // -------------------------- Altimeter Functions ------------------------------

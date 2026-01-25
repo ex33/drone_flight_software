@@ -385,6 +385,18 @@ void test_matrix18f_functions () {
         TEST_FAIL_MESSAGE(msg); // fails the test with the formatted message
     }
   }
+
+  //Test diagonal
+  std::array<float,18> diagonal_test = add_test.getDiagonal();
+  std::array<float,18> truth_diagonal_test {3.000200000024f, 3.000200000024f, 3.000200000024f, 0.504091555235567f,  0.504090355235567f, 0.500006180266667f, 0.105028400000027f,  0.105024800000027f, 0.105020400000027f, 0.010002f, 0.010002f, 0.010002f,  0.0100000002f, 0.0100000002f, 0.0100000002f, 0.01000002f, 0.01000002f,0.01000002f };
+  for (unsigned int i = 0; i<18; i++ ){
+    if (fabs(truth_diagonal_test[i] - diagonal_test[i]) > 1e-6f) {
+        snprintf(msg, sizeof(msg), 
+                  "Matrix mismatch at index %u: expected %.9f, got %.9f", 
+                  i, truth_diagonal_test[i], diagonal_test[i]);
+        TEST_FAIL_MESSAGE(msg); // fails the test with the formatted message
+    }
+  }
 }
 
 

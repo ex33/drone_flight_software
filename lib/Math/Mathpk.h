@@ -6,6 +6,7 @@
 #include "Vector3f.h"
 #include <array>
 #include <cmath>
+#include "Matrix9f.h"
 #include "Matrix18f.h"
 #include <cstdint> //Gives uint32_t. Basically all modules imports Mathpk so put this here for convinence
 //============== Vector3f ===================

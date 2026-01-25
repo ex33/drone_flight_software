@@ -18,7 +18,7 @@ public:
    * @param nominalControl Control for making reference an equilbrium point
    * @param K LQR Gain Matrix [Calculated on ground]
    * @param horizontalControllerFlag Boolean to ignore X-Y Position error
-   * @param verticalControllerFlag Boolean to ignore Z Position Error and nominal control
+   * @param verticalControllerFlag Boolean to ignore Z Position Error 
    * 
    * Initializes Controller. NOTE, KALMAN GAIN HAS MOTOR SPIN DIRECTION EMBEDED
    */
@@ -36,6 +36,8 @@ public:
    * 
    * When more complicated guidance is added and need time-varying references
    */  
+  void updateRef(const Vector3f& positionReference,const Vector3f& velocityReference,const Quaternion& quaternionReference,const Vector3f& rateReference);
+  void updateRef(const Vector3f& positionReference,const Vector3f& velocityReference,const Quaternion& quaternionReference,const Vector3f& rateReference, const std::array<float,4>& controlReference);
   void updateRef(const Vector3f& positionReference,const Vector3f& velocityReference,const Quaternion& quaternionReference,const Vector3f& rateReference, const std::array<float,4>& controlReference, const std::array<float,48> K);
 
 
