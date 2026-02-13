@@ -122,10 +122,25 @@ inline constexpr std::array<float,3> wRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,4> uRef {8.14f, 0.0f, 0.0f, 0.0f}; //[Ft, Mx, My. Mz]. Ft is the THRUST magnitude.
 // Gains for u = Ft Mx My Mz
 // Everywhere there is a 0 has a magntitude of <1e-13.
-inline constexpr std::array<float,48> K {0.0f , 0.0f, -9.235291726374717f , 0.0f, 0.0f, -26.459385705162603f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                                         0.0f, 0.063349178891246 , 0.0f, 0.0f, 0.216910884742852, 0.0f, 2.292320283163765, 0.0f, 0.0f, 0.300548926668002f, 0.0f, 0.0f,
-                                        -0.082236680485872f, 0.0f, 0.0f, -0.281605587634183f, 0.0f, 0.0f, 0.0f, 2.977310240689001 , 0.0f, 0.0f, 0.390567835752289f, 0.0f, 
-                                         0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.308247131137511f, 0.0f, 0.0f, 0.311508647946585f};
+// inline constexpr std::array<float,48> K {0.0f , 0.0f, -9.235291726374717f , 0.0f, 0.0f, -26.459385705162603f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+//                                          0.0f, 0.063349178891246 , 0.0f, 0.0f, 0.216910884742852, 0.0f, 2.292320283163765, 0.0f, 0.0f, 0.300548926668002f, 0.0f, 0.0f,
+//                                         -0.082236680485872f, 0.0f, 0.0f, -0.281605587634183f, 0.0f, 0.0f, 0.0f, 2.977310240689001 , 0.0f, 0.0f, 0.390567835752289f, 0.0f, 
+//                                          0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.308247131137511f, 0.0f, 0.0f, 0.311508647946585f};
+
+// inline constexpr std::array<float,48> K {
+//    -0.0000,   -0.0000,   -1.0951,   -0.0000,    0.0000,   -3.3836,    0.0000,    0.0000    ,0.0000 ,   0.0000 ,   0.0000,    0.0000,
+//    -0.0000,    0.0257,    0.0000,   -0.0000,    0.0883,    0.0000 ,   0.9551,    -0.0000  , -0.0000 ,   0.1288,    0.0000,   -0.0000,
+//    -0.0273,   -0.0000,   -0.0000,   -0.0941,    0.0000,   -0.0000 ,   0.0000,     1.0267 ,   0.0000,    0.0000,    0.1400,    0.0000,
+//    -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,   -0.0000 ,  -0.0000,    0.0000 ,   0.1289 ,  -0.0000,    0.0000,    0.1317};
+
+inline constexpr std::array<float,48> K {
+    0.0000,    0.0000,   -9.2353,    0.0000,    0.0000,  -26.4594,    0.0000,     0.0000,    0.0000,    0.0000,    0.0000,   -0.0000,
+   -0.0000,    0.0311,   -0.0000,   -0.0000,    0.0982,   -0.0000,    0.5894,    0.0000,   -0.0000,    0.0448,    0.0000,   -0.0000,
+   -0.0314,    0.0000,    0.0000,   -0.0999,    0.0000,    0.0000,    0.0000,    0.6465,   -0.0000,    0.0000,    0.0532,   -0.0000,
+   -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,    0.0000,   -0.0000,    0.0000,    0.0147,   -0.0000,    0.0000,    0.0171};
+
+
+
 
 
 // Can independently turn on/off controller for NE + D positions.
@@ -146,7 +161,7 @@ inline constexpr int tiltRingBufferSize = 512; //Should hold last ~5 seconds of 
 inline constexpr int magRingBufferSize = 256;
 inline constexpr int altRingBufferSize = 128;
 inline constexpr int gpsRingBufferSize = 8;  
-inline constexpr int eskfStateRingBufferSize = 512;
+inline constexpr int gncRingBufferSize = 512;
 
 // Should think about this...
 // TODO:: In the future, might want to be able to keep a buffer of EVERY measurement / state in order to 
@@ -315,7 +330,7 @@ void SETUP_Find_Motor_Directions(Motors& motors) {
   // Spin each motor slowly to observe Spin Direction. 
   // REMEMBER SPIN DIRECTION IN REFERENCE TO DOWN AXIS
   // SO IF VIEWING FROM TOP, CW --> CCW and CCW --> CW
-
+  delay(2000);
   // Observe the Spin Direction of motors and make sure they are right
   Serial.println("Starting Motor 1 Minimum PWM");
   motors.commandMotors(SETUP::M1StartPWM, 2000, 1);
@@ -440,6 +455,23 @@ void SETUP_Test_Sensors_Motors(Sensors& sensors, Motors& motors) {
   }
   delay(2000);
 
+};
+
+void SETUP_SpinMotor(Motors& motors, int num, int PWM, uint32_t duration) {
+  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  while (!Serial) {
+    //Do nothing until serial monitor is opened
+  };
+  motors.setUp();
+  motors.arm();
+  delay(2000); //Delay to make sure ESCs are armed and ready. 
+  Serial.print("Spinning Motor ");
+  Serial.print(num);
+  Serial.print(" at PWM ");
+  Serial.println(PWM);
+  motors.commandMotors(PWM, duration, num); // Spin for 5 seconds
+  Serial.println("Done Spinning");
+  while(1) {};
 };
 
 

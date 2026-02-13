@@ -14,6 +14,11 @@ Motors::Motors(const float kT, const float kM, const float L,
                     1.0f/(4.0f*kT), -1.0f/(4.0f*L*kT),  1.0f/(4.0f*L*kT),  1.0f/(4.0f*kM),
                     1.0f/(4.0f*kT), -1.0f/(4.0f*L*kT), -1.0f/(4.0f*L*kT),  -1.0f/(4.0f*kM),
                     1.0f/(4.0f*kT),  1.0f/(4.0f*L*kT), -1.0f/(4.0f*L*kT), 1.0f/(4.0f*kM)};
+
+    this->currM1PWMInt_ = minPWM;
+    this->currM2PWMInt_ = minPWM;
+    this->currM3PWMInt_ = minPWM;
+    this->currM4PWMInt_ = minPWM;
   };
 
 
@@ -32,6 +37,12 @@ void Motors::arm() {
   motor3CW_.writeMicroseconds(this->minPWM_);
   motor4CCW_.writeMicroseconds(this->minPWM_);
 
+  //Update current PWM (Redundant)
+  this->currM1PWMInt_ = this->minPWM_;
+  this->currM2PWMInt_ = this->minPWM_;
+  this->currM3PWMInt_ = this->minPWM_;
+  this->currM4PWMInt_ = this->minPWM_;
+
   this->armed_ = true;
 }
 
@@ -39,20 +50,26 @@ void Motors::arm() {
 void Motors::disarm() {
   if (currM1PWMInt_ != minPWM_) {
     motor1CW_.writeMicroseconds(this->minPWM_);
+    this->currM1PWMInt_ = this->minPWM_;
   }
   if (currM2PWMInt_ != minPWM_) {
-  motor2CCW_.writeMicroseconds(this->minPWM_);
+    motor2CCW_.writeMicroseconds(this->minPWM_);
+    this->currM2PWMInt_ = this->minPWM_;
   }
   if (currM3PWMInt_ != minPWM_) {
-  motor3CW_.writeMicroseconds(this->minPWM_);
+    motor3CW_.writeMicroseconds(this->minPWM_);
+    this->currM3PWMInt_ = this->minPWM_;
   }
   if (currM4PWMInt_ != minPWM_) {
     motor4CCW_.writeMicroseconds(this->minPWM_);
+    this->currM4PWMInt_ = this->minPWM_;
   }
 
+  if (this->armed_) {
+    Serial.println("Motors Disarmed");
+    this->armed_ = false;
+  }
 
-
-  this->armed_ = false;
 }
 
 
@@ -97,14 +114,14 @@ void Motors::commandControl(const std::array<float,4>& u_Requested) {
     this->currM4PWMInt_ = (m4PWM > this->saturationPWM_) ? this->saturationPWM_ : ( (m4PWM < this->M4StartPWM_) ? this->M4StartPWM_  : (static_cast<int>(m4PWM + 0.5f)));
 
     // // Command Motors. Have the if statement down here for regression testing, such that currM#PWMInt_ still updates without commadning motors
-    // if (this->armed_) {
-    //   motor1CW_.writeMicroseconds(this->currM1PWMInt_);
-    //   motor2CCW_.writeMicroseconds(this->currM2PWMInt_);
-    //   motor3CW_.writeMicroseconds(this->currM3PWMInt_);
-    //   motor4CCW_.writeMicroseconds(this->currM4PWMInt_);
-    // } else {
-    //   Serial.println("NOT ARMED!!!");
-    // }
+    if (this->armed_) {
+      motor1CW_.writeMicroseconds(this->currM1PWMInt_);
+      motor2CCW_.writeMicroseconds(this->currM2PWMInt_);
+      motor3CW_.writeMicroseconds(this->currM3PWMInt_);
+      motor4CCW_.writeMicroseconds(this->currM4PWMInt_);
+    } else {
+      Serial.println("NOT ARMED!!!");
+    }
 };
 
 void Motors::commandMotors(const int PWM, const uint32_t durationMillis,  const int num) {

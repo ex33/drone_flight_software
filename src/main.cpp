@@ -53,16 +53,16 @@ RingBuffer<tiltData, SETUP::tiltRingBufferSize> tiltBuffer;
 RingBuffer<magData, SETUP::magRingBufferSize> magBuffer; 
 RingBuffer<altData, SETUP::altRingBufferSize> altBuffer; 
 RingBuffer<gpsData, SETUP::gpsRingBufferSize> gpsBuffer; 
-RingBuffer<eskfStateData, SETUP::eskfStateRingBufferSize> eskfStateBuffer; 
-RingBuffer<eskfCovarianceData, SETUP::eskfStateRingBufferSize> eskfCovarianceBuffer; 
-
+RingBuffer<eskfStateData, SETUP::gncRingBufferSize> eskfStateBuffer; 
+RingBuffer<eskfCovarianceData, SETUP::gncRingBufferSize> eskfCovarianceBuffer; 
+RingBuffer<controlData, SETUP::gncRingBufferSize> controlBuffer;
 //Set up Logger(Templated on size of buffers)
 Logger<SETUP::imuRingBufferSize, 
       SETUP::magRingBufferSize, 
       SETUP::altRingBufferSize, 
       SETUP::gpsRingBufferSize, 
-      SETUP::eskfStateRingBufferSize> logger(SETUP::logFlushFrequency,SETUP::logIMUDataFrequency, SETUP::logMagDataFrequency, SETUP::logAltDataFrequency, SETUP::logGPSDataFrequency, SETUP::logGNCDataFrequency,
-                                        imuBuffer, tiltBuffer, magBuffer, altBuffer, gpsBuffer, eskfStateBuffer, eskfCovarianceBuffer);
+      SETUP::gncRingBufferSize> logger(SETUP::logFlushFrequency,SETUP::logIMUDataFrequency, SETUP::logMagDataFrequency, SETUP::logAltDataFrequency, SETUP::logGPSDataFrequency, SETUP::logGNCDataFrequency,
+                                        imuBuffer, tiltBuffer, magBuffer, altBuffer, gpsBuffer, eskfStateBuffer, eskfCovarianceBuffer, controlBuffer);
 
 //============================TIMING============================
 uint32_t initial_time; //Get the time setup() finishes at.  [unit32_t because this calls on millis()]
@@ -77,11 +77,11 @@ float printFreq = 20.0;
 
 int counter = 0;
 void preflightCheck() {
-  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
-  while (!Serial) {
-    //Do nothing until serial monitor is opened
-  };
-
+  // Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  // while (!Serial) {
+  //   //Do nothing until serial monitor is opened
+  // };
+  delay(5000);
   // Start the the SD Card
   if (!SD.begin(SD_CS)) {
     Serial.println("SD card not found");
@@ -111,21 +111,21 @@ void preflightCheck() {
   digitalWrite(LED_BUILTIN, HIGH); // High to let us know its calibrating
   Serial.println("Calibrating Sensors...");
 
-  sensors.calibrateSensors(5); // Get IMU Bias, checks GPS lock
+  sensors.calibrateSensors(20); // Get IMU Bias, checks GPS lock
 
   // Pass Magnetometer Reference to ESKF. Either user defined, or from sensor calibration
   eskf.setMagRef(sensors.getMagRefForFilter());
 
-  // for (int i=0; i<5; i++) { //Rapid blinks to tell us this is done
+  for (int i=0; i<5; i++) { //Rapid blinks to tell us this is done
 
-  //   digitalWrite(LED_BUILTIN, HIGH);
-  //   delay(500);
-  //   digitalWrite(LED_BUILTIN, LOW);
-  //   delay(500);
-  // }
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(500);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(500);
+  }
 
-  //motors.setUp();
-  //motors.arm(); //Eventually move this to be the very last thing to occur after checking through
+  motors.setUp();
+  motors.arm(); //Eventually move this to be the very last thing to occur after checking through
   // // Do some delay before the start
 
 
@@ -141,6 +141,8 @@ void preflightCheck() {
 // ============================ Actual Setup and Loop Calls ============================
 
 
+
+
 void setup() {
   //Setup helper functions (mostly for calibration and testing)
   //SETUP::SETUP_Offboard_Calibration(sensors);
@@ -154,10 +156,9 @@ void setup() {
   //SETUP::SETUP_Test_Sensors_Motors(sensors, motors);
   //SETUP::SETUP_AllanVariance(sensors);
   //SETUP::SETUP_Find_Motor_Max_Spin(motors);
-  
+  //SETUP::SETUP_SpinMotor(motors, 4, SETUP::M1StartPWM,3000);
   //SETUP::SETUP_Find_Thrust_Constant(motors,1573);
   preflightCheck();
-
 
 }
 
@@ -196,17 +197,6 @@ void loop() {
     std::array<float,3> magMeasRaw = sensors.getMagMeas();
     // Process Measurement
     std::array<float,3> magMeas = sensors.processMagMeas(magMeasRaw);
-    // Update State Estimate with Magnetometer (tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable)
-    // if (counter == 0) {
-    //   Serial.print(magMeas[0]); Serial.print(",");
-    //   Serial.print(magMeas[1]); Serial.print(",");
-    //   Serial.print(magMeas[2]); Serial.print(",");
-    //   Vector3f testMagRef = sensors.getMagRefForFilter();
-    //   Serial.print(testMagRef[0]); Serial.print(",");
-    //   Serial.print(testMagRef[1]); Serial.print(",");
-    //   Serial.print(testMagRef[2]); Serial.print(",");
-    //   counter +=1;
-    // };
     magData magSample = eskf.updateMagMeas(magMeas);
     magSample.tagData(current_time); //Tag the current time here
 
@@ -242,10 +232,7 @@ void loop() {
   }
   //-------Update Estimated State (Not really via loops)--------
   eskf.injectError(); // Inject Error of the eskf if there were any updates (uses a flag internally here)
-  // if (static_cast<float>(loop_start_time - lastPrint) >= CONSTANTS::seconds2milli/printFreq) {
-  //   lastPrint = loop_start_time;
-  //   eskf.printStates();
-  // }
+
 
   //-------- Run Finite State Machine ---------
   fsm.update(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates());
@@ -254,31 +241,29 @@ void loop() {
 
 
   // Control / Motor
-  if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates()) && fsm.getControlFlag()) {
-    std::array<float,4> uCMD = controller.getControl();
-    // Serial.print(uCMD[0]);
-    // Serial.print(", ");
-    // Serial.print(uCMD[1]);
-    // Serial.print(", ");
-    // Serial.print(uCMD[2]);
-    // Serial.print(", ");
-    // Serial.println(uCMD[3]);
-
-    motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
-    motors.printPWMCMD(); //Debugging
-
+  if (fsm.getControlFlag()) {
+    controller.updateRef(fsm.getPosition(), fsm.getVelocity(), fsm.getQuaternion(), fsm.getRates());
+    if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates())) {
+      std::array<float,4> uCMD = controller.getControl();
+      
+      if (fsm.getMotorFlag()) {
+        motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
+      };
+      //Serial.println(motors.getArmedBool());
+      //åmotors.printPWMCMD(); //For debugging
+    }
+  
   }
-
-
-  // if (!fsm.getMotorFlag()) { //Disarm motors
-  //   motors.disarm();
-  // }
-
+  if (fsm.getCriticalErrorFlag()) { //Disarm motors
+    motors.disarm();
+    while(1){};
+    //Serial.println(fsm.getMotorFlag());
+  }
   // Save down buffer for guidance control and navigation all at the (Frequency determined by SETUP::logGNCDataFrequency)
   // logger.logGNC(loop_start_time, current_time, 
   //              eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getAccelBias(), eskf.getGyroBias(), eskf.getMagBias(), eskf.getCovariance().getDiagonal());
   logger.logGNC(loop_start_time, current_time, 
-               eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getCovariance().getDiagonal());
+               eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getCovariance().getDiagonal(), motors.getCurrentMotorPWN(), controller.getControl());
 
   // Flush log (Frequency determined by SETUP::logFlushFrequency)
   logger.flush(loop_start_time);

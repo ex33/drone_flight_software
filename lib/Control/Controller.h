@@ -132,7 +132,7 @@ private:
   uint32_t lastUpdate_ = 0;
 
   // Current Control
-  std::array<float,4> currControl_ ;
+  std::array<float,4> currControl_ = {0.0,0.0,0.0,0.0}; ;
 
   std::array<float,48> K_ ; //4 x 12
 

@@ -238,4 +238,17 @@ struct eskfCovarianceData {
         P7(P_diag[6]), P8(P_diag[7]), P9(P_diag[8]){};
 };
 
+
+// Motor and Control Data
+struct controlData {
+  float time; // Time elasped in seconds
+  float Ft, Mx, My, Mz; //Control Inputs (Th
+  int PWM1, PWM2, PWM3, PWM4;
+  // Default constructor
+  controlData() : time(0), Ft(0), Mx(0), My(0), Mz(0), PWM1(0), PWM2(0), PWM3(0), PWM4(0) {};
+
+  controlData(float t, const std::array<float,4>& uCMD, const std::array<int,4>& PWM) 
+    : time(t), Ft(uCMD[0]), Mx(uCMD[1]), My(uCMD[2]), Mz(uCMD[3]), PWM1(PWM[0]), PWM2(PWM[1]), PWM3(PWM[2]), PWM4(PWM[3]) {};
+};
+
 #endif

@@ -14,15 +14,15 @@ template <
     uint16_t MAG_N, 
     uint16_t ALT_N, 
     uint16_t GPS_N, 
-    uint16_t ESKF_N
+    uint16_t GNC_N
 >
 class Logger {
 
 public:
   Logger(float logFlushFrequency, float logIMUDataFrequency, float logMagDataFrequency, float logAltDataFrequency, float logGPSDataFrequency, float logGNCDataFrequency,
     RingBuffer<imuData, IMU_N>& imuBuffer, RingBuffer<tiltData, IMU_N>& tiltBuffer, RingBuffer<magData, MAG_N>& magBuffer ,RingBuffer<altData,ALT_N>& altBuffer ,RingBuffer<gpsData, GPS_N>& gpsBuffer,
-    RingBuffer<eskfStateData, ESKF_N>& eskfStateBuffer, RingBuffer<eskfCovarianceData, ESKF_N>& eskfCovarianceBuffer):
-    imuBuffer_(imuBuffer), tiltBuffer_(tiltBuffer), magBuffer_(magBuffer), altBuffer_(altBuffer), gpsBuffer_(gpsBuffer), eskfStateBuffer_(eskfStateBuffer), eskfCovarianceBuffer_(eskfCovarianceBuffer)
+    RingBuffer<eskfStateData, GNC_N>& eskfStateBuffer, RingBuffer<eskfCovarianceData, GNC_N>& eskfCovarianceBuffer, RingBuffer<controlData, GNC_N>& controlBuffer):
+    imuBuffer_(imuBuffer), tiltBuffer_(tiltBuffer), magBuffer_(magBuffer), altBuffer_(altBuffer), gpsBuffer_(gpsBuffer), eskfStateBuffer_(eskfStateBuffer), eskfCovarianceBuffer_(eskfCovarianceBuffer), controlBuffer_(controlBuffer)
   {
     freqFlush_ = CONSTANTS::seconds2milli/logFlushFrequency; 
     freqIMU_ = CONSTANTS::seconds2milli/logIMUDataFrequency; 
@@ -48,6 +48,7 @@ public:
     gpsFile_ = SD.open("FLIGHT_DATA/gps.csv", FILE_WRITE);
     eskfStateFile_ = SD.open("FLIGHT_DATA/eskfState.csv", FILE_WRITE);
     eskfCovarianceFile_ = SD.open("FLIGHT_DATA/eskfCovariance.csv", FILE_WRITE);
+    controlFile_ = SD.open("FLIGHT_DATA/control.csv", FILE_WRITE);
 
     // Write Headers
     imuFile_.println("t,aX,aY,aZ,gX,gY,gZ");
@@ -57,6 +58,7 @@ public:
     gpsFile_.println("t,px,py,vx,vy,nisPX,nisPY,nisVX,nisVY");
     eskfStateFile_.println("t,pX,pY,pZ,vX,vY,vZ,qW,qX,qY,qZ,wX,wY,wZ,baX,baY,baZ,bgX,bgY,bgZ,bmX,bmY,bmZ");
     eskfCovarianceFile_.println("t,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18");
+    controlFile_.println("t,u1,u2,u3,u4,m1PWM,m2PWM,m3PWM,m4PWM");
   };
 
   void logIMU(const uint32_t now, const imuData imuSample, const tiltData tiltSample) {
@@ -112,14 +114,21 @@ public:
   }
 
   void logGNC(const uint32_t now, const float currentTime,
-              const Vector3f& p, const Vector3f& v, const Quaternion& q, const Vector3f& w,  const std::array<float,9>& diagCov) {
+              const Vector3f& p, const Vector3f& v, const Quaternion& q, const Vector3f& w,  const std::array<float,9>& diagCov, 
+              const std::array<int,4>& motorPWM, 
+              const std::array<float,4>& controlCMD
+              ) {
     if (static_cast<float> (now - lastGNC_) >= freqGNC_) {
       eskfStateData eskfStateSample (currentTime, p, v, q, w);
       eskfCovarianceData eskfCovarianceSample (currentTime, diagCov);
       eskfStateBuffer_.push(eskfStateSample);
       eskfCovarianceBuffer_.push(eskfCovarianceSample);
+
+
+
       //guidanceData guidSample
-      // controlData controlSample
+      controlData controlSample(currentTime, controlCMD, motorPWM);
+      controlBuffer_.push(controlSample);
       // GuidBuffer.push(target state);
       // ControlBuffer.push(commanded control);
 
@@ -283,6 +292,26 @@ public:
 
   }
 
+void flushControl() {
+    controlData controlSample;
+    static constexpr size_t controlCSVSize = 750;
+    // Assume worst case: num_floats * 11 char *  sensor_freq / logger_freq (or logger_freq / sensor_freq if in seconds)
+    static char controlCSVBlock [controlCSVSize]; // 9 * 11 * 10/2 ~= 495 characters (log this at controller frequency since we just need enough to reconstruct trajectory)
+    // Keep track of current positions inside csvblocks
+    uint16_t controlPosition = 0;
+
+    while (this->controlBuffer_.pop(controlSample)) { 
+      controlPosition += snprintf(controlCSVBlock + controlPosition, 
+                            controlCSVSize - controlPosition, 
+                            "%.3f,%.6f,%.6f,%.6f,%.6f,%d,%d,%d,%d\n", 
+                            controlSample.time, 
+                            controlSample.Ft, controlSample.Mx, controlSample.My, controlSample.Mz,
+                            controlSample.PWM1, controlSample.PWM2, controlSample.PWM3, controlSample.PWM4);
+    }
+    controlFile_.write((uint8_t*)controlCSVBlock, controlPosition); //Write needs pointer to uint8_t data, and size of bytes
+    controlFile_.flush();
+  }
+
 
   //Note: Push data to the buffers directly outside. Logger will have access to the buffer via reference.
   void flush(uint32_t now){
@@ -296,6 +325,7 @@ public:
         flushMag();
         flushAlt();
         flushESKF();
+        flushControl();
 
         //flushGPS();
       } ;
@@ -321,8 +351,9 @@ private:
   RingBuffer<magData,MAG_N>& magBuffer_;
   RingBuffer<altData,ALT_N>& altBuffer_;
   RingBuffer<gpsData,GPS_N>& gpsBuffer_;
-  RingBuffer<eskfStateData,ESKF_N>& eskfStateBuffer_;
-  RingBuffer<eskfCovarianceData,ESKF_N>& eskfCovarianceBuffer_;
+  RingBuffer<eskfStateData,GNC_N>& eskfStateBuffer_;
+  RingBuffer<eskfCovarianceData,GNC_N>& eskfCovarianceBuffer_;
+  RingBuffer<controlData, GNC_N>& controlBuffer_;
 
   // Files
   File imuFile_;
@@ -332,6 +363,7 @@ private:
   File gpsFile_;
   File eskfStateFile_;
   File eskfCovarianceFile_;
+  File controlFile_;
 
 
   //Timer related 
