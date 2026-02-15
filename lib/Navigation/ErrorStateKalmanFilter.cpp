@@ -125,7 +125,7 @@ void ErrorStateKalmanFilter::predict(const std::array<float,6> imuMeas, uint32_t
         Quaternion q_temp = this->q_k;
         Vector3f v_temp = this->v_k;
 
-        float dt = (now - this->lastFilterTime) / 1000.0f; // Convert milliseconds into seconds here
+        float dt = (now - this->lastFilterTime) / CONSTANTS::seconds2micro; // Convert milliseconds into seconds here
         this->dt_ = dt; //DEBUGGING. REMOVE THIS 
 
         //1. Propagate the Error State Covariance Forward in time 

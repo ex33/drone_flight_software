@@ -39,9 +39,9 @@ ErrorStateKalmanFilter eskf(SETUP::p0, SETUP::v0, SETUP::q0,
 Controller controller(SETUP::controlFrequency, SETUP::pRef, SETUP::vRef, SETUP::qRef, SETUP::wRef, SETUP::uRef, SETUP::K, SETUP::horizontalControllerFlag, SETUP::verticalControllerFlag); //Initialize with a constant reference. Will be updated by Guidance if necessary in Loop
 //============================MOTOR============================
 Motors motors(SETUP::kT, SETUP::kM, SETUP::L,
-            SETUP::esc1SignalPin, SETUP::esc2SignalPin, SETUP::esc3SignalPin, SETUP::esc4SignalPin,
-            SETUP::M1StartPWM, SETUP::M2StartPWM, SETUP::M3StartPWM, SETUP::M4StartPWM, 
-            SETUP::minPWM, SETUP::maxPWM, SETUP::saturationPWM, SETUP::maxSpinSquare); 
+              SETUP::esc1SignalPin, SETUP::esc2SignalPin, SETUP::esc3SignalPin, SETUP::esc4SignalPin,
+              SETUP::M1StartPWM, SETUP::M2StartPWM, SETUP::M3StartPWM, SETUP::M4StartPWM, 
+              SETUP::minPWM, SETUP::maxPWM, SETUP::saturationPWM, SETUP::maxSpinSquare); 
 
 //============================FINITE STATE MACHINE============================
 FiniteStateMachine fsm(SETUP::imuFrequency); //Defaults to BOOT Mode
@@ -49,7 +49,7 @@ FiniteStateMachine fsm(SETUP::imuFrequency); //Defaults to BOOT Mode
 //============================LOGGERS/BUFFERS============================
 //Set up Ringbuffers
 RingBuffer<imuData, SETUP::imuRingBufferSize> imuBuffer; 
-RingBuffer<tiltData, SETUP::tiltRingBufferSize> tiltBuffer; 
+RingBuffer<tiltData, SETUP::imuRingBufferSize> tiltBuffer; 
 RingBuffer<magData, SETUP::magRingBufferSize> magBuffer; 
 RingBuffer<altData, SETUP::altRingBufferSize> altBuffer; 
 RingBuffer<gpsData, SETUP::gpsRingBufferSize> gpsBuffer; 
@@ -70,17 +70,15 @@ uint32_t initial_time; //Get the time setup() finishes at.  [unit32_t because th
 uint32_t loop_start_time; //Keeps track of time at the start of loop when calling all functions [unit32_t because this calls on millis()]
 
 float current_time; //This is what is saved for loggers when post processsing.  [float because this converts milli-seconds into seconds for logging]
-//Debug
-uint16_t lastPrint = 0;
-float printFreq = 20.0;
+
 
 
 int counter = 0;
 void preflightCheck() {
-  // Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
-  // while (!Serial) {
-  //   //Do nothing until serial monitor is opened
-  // };
+  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  while (!Serial) {
+    //Do nothing until serial monitor is opened
+  };
   delay(5000);
   // Start the the SD Card
   if (!SD.begin(SD_CS)) {
@@ -111,7 +109,7 @@ void preflightCheck() {
   digitalWrite(LED_BUILTIN, HIGH); // High to let us know its calibrating
   Serial.println("Calibrating Sensors...");
 
-  sensors.calibrateSensors(20); // Get IMU Bias, checks GPS lock
+  sensors.calibrateSensors(10); // Get IMU Bias, checks GPS lock
 
   // Pass Magnetometer Reference to ESKF. Either user defined, or from sensor calibration
   eskf.setMagRef(sensors.getMagRefForFilter());
@@ -131,10 +129,10 @@ void preflightCheck() {
 
 
   logger.begin(); //Start logger
-  initial_time = millis(); //Set initial Time before starting.
 
 
-  fsm.preflightCheckStatus(millis(), true); //Transitions into Idle mode
+  fsm.preflightCheckStatus(micros(), true); //Transitions into Idle mode
+  initial_time = micros(); //Set initial Time before starting.
 }
 
 
@@ -163,8 +161,8 @@ void setup() {
 }
 
 void loop() {
-  loop_start_time = millis();
-  current_time = (loop_start_time - initial_time) / CONSTANTS::seconds2milli; 
+  loop_start_time = micros();
+  current_time = (loop_start_time - initial_time) / CONSTANTS::seconds2micro; 
   // // Check/Switch States
   //Flush on state changes, disarm, usb disconnect, error, etcs
 
@@ -234,36 +232,42 @@ void loop() {
   eskf.injectError(); // Inject Error of the eskf if there were any updates (uses a flag internally here)
 
 
-  //-------- Run Finite State Machine ---------
-  fsm.update(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates());
+  // //-------- Run Finite State Machine ---------
+  // fsm.update(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates());
 
-  // GUID Runs here. FOr now, not really running anything
+  // // GUID Runs here. FOr now, not really running anything
 
 
-  // Control / Motor
-  if (fsm.getControlFlag()) {
-    controller.updateRef(fsm.getPosition(), fsm.getVelocity(), fsm.getQuaternion(), fsm.getRates());
-    if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates())) {
-      std::array<float,4> uCMD = controller.getControl();
+  // // Control / Motor
+  // if (fsm.getControlFlag()) {
+  //   controller.updateRef(fsm.getPosition(), fsm.getVelocity(), fsm.getQuaternion(), fsm.getRates());
+  //   if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates())) {
+  //     std::array<float,4> uCMD = controller.getControl();
       
-      if (fsm.getMotorFlag()) {
-        motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
-      };
-      //Serial.println(motors.getArmedBool());
-      //åmotors.printPWMCMD(); //For debugging
-    }
+  //     if (fsm.getMotorFlag()) {
+  //       motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
+  //     };
+  //     //Serial.println(motors.getArmedBool());
+  //     //åmotors.printPWMCMD(); //For debugging
+  //   }
   
-  }
-  if (fsm.getCriticalErrorFlag()) { //Disarm motors
-    motors.disarm();
-    while(1){};
-    //Serial.println(fsm.getMotorFlag());
-  }
+  // }
+  // if (fsm.getCriticalErrorFlag()) { //Disarm motors
+  //   motors.disarm();
+  //   while(1){};
+  //   //Serial.println(fsm.getMotorFlag());
+  // }
+
+
+
   // Save down buffer for guidance control and navigation all at the (Frequency determined by SETUP::logGNCDataFrequency)
   // logger.logGNC(loop_start_time, current_time, 
   //              eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getAccelBias(), eskf.getGyroBias(), eskf.getMagBias(), eskf.getCovariance().getDiagonal());
+  // logger.logGNC(loop_start_time, current_time, 
+  //              eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getCovariance().getDiagonal(), motors.getCurrentMotorPWN(), controller.getControl());
   logger.logGNC(loop_start_time, current_time, 
-               eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getCovariance().getDiagonal(), motors.getCurrentMotorPWN(), controller.getControl());
+               eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(),  motors.getCurrentMotorPWN(), controller.getControl());
+
 
   // Flush log (Frequency determined by SETUP::logFlushFrequency)
   logger.flush(loop_start_time);

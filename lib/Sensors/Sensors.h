@@ -440,10 +440,10 @@ private:
     std::array<double,5> last_gps_meas;
 
     //Frequencies (micro-seconds)
-    float freqIMU_; 
-    float freqMag_;
-    float freqAlt_;
-    float freqGPS_;
+    uint32_t freqIMU_; 
+    uint32_t freqMag_;
+    uint32_t freqAlt_;
+    uint32_t freqGPS_;
 
     //Rotations
     Rotation rotBody2IMU_;

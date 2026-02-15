@@ -38,9 +38,9 @@ class FiniteStateMachine {
     };
 
     void update(uint32_t now, Vector3f position, Vector3f velocity, Quaternion quaternion, Vector3f rates) {
-      if ( (static_cast<float>(now - lastUpdate_) >= this->updatePeriodMS_) && (!criticalError_) ) {
+      if (( (now - lastUpdate_) >= this->updatePeriodMS_) && (!criticalError_) ) {
         lastUpdate_ = now; 
-        timeInState_ = static_cast<float>(now - timeEnterState_) / CONSTANTS::seconds2milli;
+        timeInState_ = (now - timeEnterState_) / CONSTANTS::seconds2milli;
 
         // Catch any error first...
         //Calculate the tilt angle
@@ -195,7 +195,7 @@ class FiniteStateMachine {
     FlightState state_;
     uint32_t timeEnterState_;
     float timeInState_;  //Seconds
-    float updatePeriodMS_;
+    uint32_t updatePeriodMS_;
     uint32_t lastUpdate_;
 
     Vector3f refPosition_ = Vector3f(0.0f, 0.0f, 0.0f);

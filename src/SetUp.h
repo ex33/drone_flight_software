@@ -48,8 +48,8 @@ inline constexpr float maxSpinSquare = 160000.0f; // [rev^2 / s^2] Used to Conve
 // ========================= Sensors =========================
 
 // Sensor polling frequencies
-inline constexpr float imuFrequency {100.0f}; //Hz
-inline constexpr float magFrequency {50.0f};//{50}; //Hz
+inline constexpr float imuFrequency {1000.0f}; //Hz
+inline constexpr float magFrequency {100.0f};//{50}; //Hz
 inline constexpr float altFrequency {25.0f}; //Hz, 25 Hz for Indoors
 inline constexpr float gpsFrequency {1.0f}; //Hz
 
@@ -97,15 +97,15 @@ inline constexpr std::array<float,81> P0 {
 };
 
 //Set Process Noise
-inline constexpr float sig_acc(0.03f);
-inline constexpr float sig_gyro(0.003f);
+inline constexpr float sig_acc(0.045f); //From static calibration, this is closer to ~0.044for highest axis
+inline constexpr float sig_gyro(0.004f); // From static calibratation, this is closer to ~0.004
 // inline constexpr float eta_acc(0.001f);
 // inline constexpr float eta_gyro(0.0005f);
 // inline constexpr float eta_mag(0.0001f);
 //Set Measurement Noise
-inline constexpr float sig_mag(0.5f);
+inline constexpr float sig_mag(0.5f); //From static calibration, closer to ~0.45
 inline constexpr float sig_tilt(0.5f);
-inline constexpr float sig_alt(0.1f);
+inline constexpr float sig_alt(0.1f); // From static calibration, this is ~0.04m
 inline constexpr float sig_gps_pos(3.0f);
 inline constexpr float sig_gps_vel(0.1f);
 
@@ -114,7 +114,7 @@ inline constexpr float sig_gps_vel(0.1f);
 inline constexpr bool nis_gating_flag (false);
 
 // ========================= Controller =========================
-inline constexpr float controlFrequency {50}; // Hz, Running at IMU frequency (Limited by Servo library pulses being 50Hz). Can consider seperating Gyro and Accelerometer rates! Then can pseudo have inner / outter loop since attitude will udpate faster and can increase this frequency
+inline constexpr float controlFrequency {500}; // Hz
 inline constexpr std::array<float,3> pRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,3> vRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,4> qRef {1.0f, 0.0f, 0.0f, 0.0f};
@@ -122,10 +122,10 @@ inline constexpr std::array<float,3> wRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,4> uRef {8.14f, 0.0f, 0.0f, 0.0f}; //[Ft, Mx, My. Mz]. Ft is the THRUST magnitude.
 // Gains for u = Ft Mx My Mz
 // Everywhere there is a 0 has a magntitude of <1e-13.
-// inline constexpr std::array<float,48> K {0.0f , 0.0f, -9.235291726374717f , 0.0f, 0.0f, -26.459385705162603f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-//                                          0.0f, 0.063349178891246 , 0.0f, 0.0f, 0.216910884742852, 0.0f, 2.292320283163765, 0.0f, 0.0f, 0.300548926668002f, 0.0f, 0.0f,
-//                                         -0.082236680485872f, 0.0f, 0.0f, -0.281605587634183f, 0.0f, 0.0f, 0.0f, 2.977310240689001 , 0.0f, 0.0f, 0.390567835752289f, 0.0f, 
-//                                          0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.308247131137511f, 0.0f, 0.0f, 0.311508647946585f};
+inline constexpr std::array<float,48> K {0.0f , 0.0f, -9.235291726374717f , 0.0f, 0.0f, -26.459385705162603f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                         0.0f, 0.063349178891246 , 0.0f, 0.0f, 0.216910884742852, 0.0f, 2.292320283163765, 0.0f, 0.0f, 0.300548926668002f, 0.0f, 0.0f,
+                                        -0.082236680485872f, 0.0f, 0.0f, -0.281605587634183f, 0.0f, 0.0f, 0.0f, 2.977310240689001 , 0.0f, 0.0f, 0.390567835752289f, 0.0f, 
+                                         0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.308247131137511f, 0.0f, 0.0f, 0.311508647946585f};
 
 // inline constexpr std::array<float,48> K {
 //    -0.0000,   -0.0000,   -1.0951,   -0.0000,    0.0000,   -3.3836,    0.0000,    0.0000    ,0.0000 ,   0.0000 ,   0.0000,    0.0000,
@@ -133,11 +133,11 @@ inline constexpr std::array<float,4> uRef {8.14f, 0.0f, 0.0f, 0.0f}; //[Ft, Mx, 
 //    -0.0273,   -0.0000,   -0.0000,   -0.0941,    0.0000,   -0.0000 ,   0.0000,     1.0267 ,   0.0000,    0.0000,    0.1400,    0.0000,
 //    -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,   -0.0000 ,  -0.0000,    0.0000 ,   0.1289 ,  -0.0000,    0.0000,    0.1317};
 
-inline constexpr std::array<float,48> K {
-    0.0000,    0.0000,   -9.2353,    0.0000,    0.0000,  -26.4594,    0.0000,     0.0000,    0.0000,    0.0000,    0.0000,   -0.0000,
-   -0.0000,    0.0311,   -0.0000,   -0.0000,    0.0982,   -0.0000,    0.5894,    0.0000,   -0.0000,    0.0448,    0.0000,   -0.0000,
-   -0.0314,    0.0000,    0.0000,   -0.0999,    0.0000,    0.0000,    0.0000,    0.6465,   -0.0000,    0.0000,    0.0532,   -0.0000,
-   -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,    0.0000,   -0.0000,    0.0000,    0.0147,   -0.0000,    0.0000,    0.0171};
+// inline constexpr std::array<float,48> K {
+//     0.0000,    0.0000,   -9.2353,    0.0000,    0.0000,  -26.4594,    0.0000,     0.0000,    0.0000,    0.0000,    0.0000,   -0.0000,
+//    -0.0000,    0.0311,   -0.0000,   -0.0000,    0.0982,   -0.0000,    0.5894,    0.0000,   -0.0000,    0.0448,    0.0000,   -0.0000,
+//    -0.0314,    0.0000,    0.0000,   -0.0999,    0.0000,    0.0000,    0.0000,    0.6465,   -0.0000,    0.0000,    0.0532,   -0.0000,
+//    -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,    0.0000,   -0.0000,    0.0000,    0.0147,   -0.0000,    0.0000,    0.0171};
 
 
 
@@ -156,25 +156,25 @@ bool verticalControllerFlag = false; // Flag for Controller to determine if heig
 
 // ========================= LOGGER / RINGBUFFER SIZE =========================
 // Make these power 2 since ringbuffer modulus function is for bitwise
-inline constexpr int imuRingBufferSize = 512; //Should hold last ~5 seconds of data
-inline constexpr int tiltRingBufferSize = 512; //Should hold last ~5 seconds of data
-inline constexpr int magRingBufferSize = 256;
-inline constexpr int altRingBufferSize = 128;
-inline constexpr int gpsRingBufferSize = 8;  
-inline constexpr int gncRingBufferSize = 512;
+// Based on frequencies set below. NOT loop frequencies
+inline constexpr int imuRingBufferSize = 2048; //For 200Hz will hold ~2-3 seconds of data
+inline constexpr int magRingBufferSize = 256; // For 50Hz, should hold ~4-5 seconds of data
+inline constexpr int altRingBufferSize = 128; //For 25Hz, should hold ~ 4-5 seconds of data
+inline constexpr int gpsRingBufferSize = 4;   // FOr 1 Hz, should hold ~ 4 seconds of data
+inline constexpr int gncRingBufferSize = 512; //For 200Hz will hold ~2-3 seconds of data
 
 // Should think about this...
 // TODO:: In the future, might want to be able to keep a buffer of EVERY measurement / state in order to 
 // back propagate if needed, In which case, it might be better to just extract every X-th measurement from that buffer based on the frequencies here
 // Or maybe just have seperate buffers for less book keeping
 // IF THESE CHANGE, MAKE SURE TO CHANGE SIZE OF STURCTURE INSIDE LOGGER FOR EACH LOGSENSOR
-inline constexpr float logIMUDataFrequency {25}; //Hz. Logs every 4th IMU Sample
-inline constexpr float logMagDataFrequency {25}; //Hz. Logs every 2nd IMU Sample
+inline constexpr float logIMUDataFrequency {200}; //Hz. Logs every 4th IMU Sample
+inline constexpr float logMagDataFrequency {50}; //Hz. Logs every 2nd IMU Sample
 inline constexpr float logAltDataFrequency {25}; //Hz. Logs every Altmeter sample
 inline constexpr float logGPSDataFrequency {1}; //Hz. Logs every GPS sample
-inline constexpr float logGNCDataFrequency {10}; //Hz. 
+inline constexpr float logGNCDataFrequency {200}; //Hz.  Logs State AND Controller AND Motor information every 250 times in 1 second.
 
-inline constexpr float logFlushFrequency {2}; //Hz. This is the rate in which Data are written to the file and flushed
+inline constexpr float logFlushFrequency {10}; //Hz. This is the rate in which Data are written to the file and flushed
 
 
 // Setup Functions
