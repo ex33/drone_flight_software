@@ -172,7 +172,7 @@ inline constexpr float logIMUDataFrequency {200}; //Hz. Logs every 4th IMU Sampl
 inline constexpr float logMagDataFrequency {50}; //Hz. Logs every 2nd IMU Sample
 inline constexpr float logAltDataFrequency {25}; //Hz. Logs every Altmeter sample
 inline constexpr float logGPSDataFrequency {1}; //Hz. Logs every GPS sample
-inline constexpr float logGNCDataFrequency {200}; //Hz.  Logs State AND Controller AND Motor information every 250 times in 1 second.
+inline constexpr float logGNCDataFrequency {100}; //Hz.  Logs State AND Controller AND Motor information every 250 times in 1 second.
 
 inline constexpr float logFlushFrequency {10}; //Hz. This is the rate in which Data are written to the file and flushed
 

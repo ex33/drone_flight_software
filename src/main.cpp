@@ -71,7 +71,9 @@ uint32_t loop_start_time; //Keeps track of time at the start of loop when callin
 
 float current_time; //This is what is saved for loggers when post processsing.  [float because this converts milli-seconds into seconds for logging]
 
-
+//Testing timing of loops
+uint32_t start;
+uint32_t dt;
 
 int counter = 0;
 void preflightCheck() {
@@ -79,7 +81,8 @@ void preflightCheck() {
   while (!Serial) {
     //Do nothing until serial monitor is opened
   };
-  delay(5000);
+  //delay(5000);
+
   // Start the the SD Card
   if (!SD.begin(SD_CS)) {
     Serial.println("SD card not found");
@@ -109,7 +112,7 @@ void preflightCheck() {
   digitalWrite(LED_BUILTIN, HIGH); // High to let us know its calibrating
   Serial.println("Calibrating Sensors...");
 
-  sensors.calibrateSensors(10); // Get IMU Bias, checks GPS lock
+  sensors.calibrateSensors(1); // Get IMU Bias, checks GPS lock
 
   // Pass Magnetometer Reference to ESKF. Either user defined, or from sensor calibration
   eskf.setMagRef(sensors.getMagRefForFilter());
@@ -132,7 +135,6 @@ void preflightCheck() {
 
 
   fsm.preflightCheckStatus(micros(), true); //Transitions into Idle mode
-  initial_time = micros(); //Set initial Time before starting.
 }
 
 
@@ -162,7 +164,7 @@ void setup() {
 
 void loop() {
   loop_start_time = micros();
-  current_time = (loop_start_time - initial_time) / CONSTANTS::seconds2micro; 
+
   // // Check/Switch States
   //Flush on state changes, disarm, usb disconnect, error, etcs
 
@@ -170,7 +172,10 @@ void loop() {
   //TODO:: Consider making sensors and eskf compatable with datatypes instead, so passing around info is more seamless
   //======= Run Sensors / Navigation ======
   //-------IMU Loop (Frequency Determined by SETUP::imuFrequency)--------
+  // Each loop takes ~42 micro seconds!
+  // However, each measurement takes ~3000 micro seconds. Need to move away from the blocking getEvent function to ensure we don't miss measurements.
   if (sensors.imuUpdate(loop_start_time)) {
+    //start = micros();
     // Obtain RAW measurements
     std::array<float,6> imuMeasRaw = sensors.getIMUMeas();
     // Process Measurement
@@ -178,31 +183,41 @@ void loop() {
     //Predict forward state using IMU
     eskf.predict(imuMeas, loop_start_time);
     //Set up Data Samples for logging
-    imuData imuSample (current_time, imuMeas); //Raw imu measurement isn't super helpful
+    imuData imuSample (loop_start_time, imuMeas); //Raw imu measurement isn't super helpful
 
     // Update State Estimate with Tilt if magnitude of acceleration is small enough
     tiltData tiltSample = eskf.updateTiltMeas(std::array<float,3> {imuMeas[0], imuMeas[1], imuMeas[2]});
-    tiltSample.tagData(current_time); //Tag the current time here
+    tiltSample.tagData(loop_start_time); //Tag the current time here
 
     //Push to Buffer (Frequency determined by SETUP::logIMUDataFrequency)
-    logger.logIMU(loop_start_time, imuSample, tiltSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
-
+    logger.logIMU(loop_start_time, imuSample, tiltSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements) 
+    //dt = micros() - start;
+    //Serial.println(dt);
   }
 
+
   //-------Magnetometer Loop (Frequency Determined by SETUP::magFrequency)--------
+  // Each loop takes ~8-9 micro seconds. HOWEVER, obtaining the measurement is ~800 micro seconds
   if (sensors.magUpdate(loop_start_time)) {
+    //start = micros();
     // Obtain RAW measurements
     std::array<float,3> magMeasRaw = sensors.getMagMeas();
     // Process Measurement
     std::array<float,3> magMeas = sensors.processMagMeas(magMeasRaw);
     magData magSample = eskf.updateMagMeas(magMeas);
-    magSample.tagData(current_time); //Tag the current time here
+    magSample.tagData(loop_start_time); //Tag the current time here
 
     //Push to Buffer (Frequency determined by SETUP::logMagDataFrequency)
     logger.logMag(loop_start_time, magSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
+    //dt = micros() - start;
+    //Serial.println(dt);
   }
+
   //-------Altimeter Loop (Frequency Determined by SETUP::altFrequency)--------
+  // Calling to get the measurement can take up to 4000 microseconds...
+  // The actual loop execution occurs in less than 1 millisecond
   if (sensors.altUpdate(loop_start_time)) {
+    //start = micros();
     // Obtain RAW measurements
     float altMeasRaw = sensors.getAltMeas();
     // Process Measurement
@@ -211,52 +226,55 @@ void loop() {
     altData altSample = eskf.updateAltMeas(altMeas);
 
     altSample.setPressureData(altMeasRaw); //Save down the pressure
-    altSample.tagData(current_time); //Tag the current time here
+    altSample.tagData(loop_start_time); //Tag the current time here
 
     //Push to Buffer (Frequency determined by SETUP::logAltDataFrequency)
     logger.logAlt(loop_start_time, altSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
+    //dt = micros() - start;
+    //Serial.println(dt);
   }
 
   //-------GPS Loop (Frequency Determined by SETUP::gpsFrequency)--------
   // TODO:: Comeback once gps is set up
-  if (SETUP::gpsFlag) {
-    if (sensors.gpsUpdate(loop_start_time)) {
-      std::array<double,5> gpsMeasRaw = sensors.getGPSMeas();
-      std::array<float,4> gpsMeas = sensors.processGPSMeas(gpsMeasRaw,-eskf.getPosition()[2]); //Get the best estimate of altitude, which is just our UP direction (negative of Z axis)
-      //Tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable. 
-      gpsData gpsSample = eskf.updateGPSMeas(gpsMeas);
-      //Push Meas to buffer / ram
-    }
-  }
+  // if (SETUP::gpsFlag) {
+  //   if (sensors.gpsUpdate(loop_start_time)) {
+  //     std::array<double,5> gpsMeasRaw = sensors.getGPSMeas();
+  //     std::array<float,4> gpsMeas = sensors.processGPSMeas(gpsMeasRaw,-eskf.getPosition()[2]); //Get the best estimate of altitude, which is just our UP direction (negative of Z axis)
+  //     //Tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable. 
+  //     gpsData gpsSample = eskf.updateGPSMeas(gpsMeas);
+  //     //Push Meas to buffer / ram
+  //   }
+  // }
   //-------Update Estimated State (Not really via loops)--------
+  // This executes very fast, close to 0-1 microseconds.
   eskf.injectError(); // Inject Error of the eskf if there were any updates (uses a flag internally here)
 
 
   // //-------- Run Finite State Machine ---------
-  // fsm.update(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates());
+  fsm.update(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates());
 
   // // GUID Runs here. FOr now, not really running anything
 
 
   // // Control / Motor
-  // if (fsm.getControlFlag()) {
-  //   controller.updateRef(fsm.getPosition(), fsm.getVelocity(), fsm.getQuaternion(), fsm.getRates());
-  //   if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates())) {
-  //     std::array<float,4> uCMD = controller.getControl();
+  if (fsm.getControlFlag()) {
+    controller.updateRef(fsm.getPosition(), fsm.getVelocity(), fsm.getQuaternion(), fsm.getRates());
+    if (controller.updateControl(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates())) {
+      std::array<float,4> uCMD = controller.getControl();
       
-  //     if (fsm.getMotorFlag()) {
-  //       motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
-  //     };
-  //     //Serial.println(motors.getArmedBool());
-  //     //åmotors.printPWMCMD(); //For debugging
-  //   }
+      if (fsm.getMotorFlag()) {
+        motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
+      };
+      //Serial.println(motors.getArmedBool());
+      //åmotors.printPWMCMD(); //For debugging
+    }
   
-  // }
-  // if (fsm.getCriticalErrorFlag()) { //Disarm motors
-  //   motors.disarm();
-  //   while(1){};
-  //   //Serial.println(fsm.getMotorFlag());
-  // }
+  }
+  if (fsm.getCriticalErrorFlag()) { //Disarm motors
+    motors.disarm();
+    while(1){};
+    //Serial.println(fsm.getMotorFlag());
+  }
 
 
 
@@ -265,12 +283,15 @@ void loop() {
   //              eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getAccelBias(), eskf.getGyroBias(), eskf.getMagBias(), eskf.getCovariance().getDiagonal());
   // logger.logGNC(loop_start_time, current_time, 
   //              eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(), eskf.getCovariance().getDiagonal(), motors.getCurrentMotorPWN(), controller.getControl());
-  logger.logGNC(loop_start_time, current_time, 
+
+  // This also executes very vast, ~0-1 microseconds
+  logger.logGNC(loop_start_time,
                eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates(),  motors.getCurrentMotorPWN(), controller.getControl());
 
 
   // Flush log (Frequency determined by SETUP::logFlushFrequency)
-  logger.flush(loop_start_time);
+
+  logger.flush(loop_start_time); //This is VERY slow. Takes ~14000 microseconds (0.01 second)
 }
 
 

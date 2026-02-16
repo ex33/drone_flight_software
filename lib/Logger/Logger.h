@@ -41,24 +41,15 @@ public:
       SD.mkdir("FLIGHT_DATA");
     }
 
-    imuFile_ = SD.open("FLIGHT_DATA/imu.csv", FILE_WRITE);
-    tiltFile_ = SD.open("FLIGHT_DATA/tilt.csv", FILE_WRITE);
-    magFile_ = SD.open("FLIGHT_DATA/mag.csv", FILE_WRITE);
-    altFile_ = SD.open("FLIGHT_DATA/alt.csv", FILE_WRITE);
-    gpsFile_ = SD.open("FLIGHT_DATA/gps.csv", FILE_WRITE);
-    eskfStateFile_ = SD.open("FLIGHT_DATA/eskfState.csv", FILE_WRITE);
-    eskfCovarianceFile_ = SD.open("FLIGHT_DATA/eskfCovariance.csv", FILE_WRITE);
-    controlFile_ = SD.open("FLIGHT_DATA/control.csv", FILE_WRITE);
+    //imuFile_ = SD.open("FLIGHT_DATA/imu.bin", FILE_WRITE);
+    tiltFile_ = SD.open("FLIGHT_DATA/tilt.bin", FILE_WRITE);
+    magFile_ = SD.open("FLIGHT_DATA/mag.bin", FILE_WRITE);
+    altFile_ = SD.open("FLIGHT_DATA/alt.bin", FILE_WRITE);
+    gpsFile_ = SD.open("FLIGHT_DATA/gps.bin", FILE_WRITE);
+    eskfStateFile_ = SD.open("FLIGHT_DATA/eskfState.bin", FILE_WRITE);
+    eskfCovarianceFile_ = SD.open("FLIGHT_DATA/eskfCovariance.bin", FILE_WRITE);
+    controlFile_ = SD.open("FLIGHT_DATA/control.bin", FILE_WRITE);
 
-    // Write Headers
-    imuFile_.println("t,aX,aY,aZ,gX,gY,gZ");
-    tiltFile_.println("t,vecX,vecX,vecZ,nisX,nisY,nisZ");
-    magFile_.println("t,mX,mY,mZ,vecX,vecY,vecZ,nisX,nisY,nisZ");
-    altFile_.println("t,p,h,nis");
-    gpsFile_.println("t,px,py,vx,vy,nisPX,nisPY,nisVX,nisVY");
-    eskfStateFile_.println("t,pX,pY,pZ,vX,vY,vZ,qW,qX,qY,qZ,wX,wY,wZ,baX,baY,baZ,bgX,bgY,bgZ,bmX,bmY,bmZ");
-    eskfCovarianceFile_.println("t,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18");
-    controlFile_.println("t,u1,u2,u3,u4,m1PWM,m2PWM,m3PWM,m4PWM");
   };
 
   void logIMU(const uint32_t now, const imuData imuSample, const tiltData tiltSample) {
@@ -97,17 +88,17 @@ public:
 
 
   //No need to log covariance. Use NIS, or use sensor outputs to reconstruct
-  void logGNC(const uint32_t now, const float currentTime,
+  void logGNC(const uint32_t now, 
               const Vector3f& p, const Vector3f& v, const Quaternion& q, const Vector3f& w, 
               const std::array<int,4>& motorPWM, 
               const std::array<float,4>& controlCMD
               ) {
     if ((now - lastGNC_) >= freqGNC_) {
-      eskfStateData eskfStateSample (currentTime, p, v, q, w);
+      eskfStateData eskfStateSample (now, p, v, q, w);
       eskfStateBuffer_.push(eskfStateSample);
 
       //guidanceData guidSample
-      controlData controlSample(currentTime, controlCMD, motorPWM);
+      controlData controlSample(now, controlCMD, motorPWM);
       controlBuffer_.push(controlSample);
       // GuidBuffer.push(target state);
       // ControlBuffer.push(commanded control);
@@ -117,21 +108,21 @@ public:
   }
 
   //Version to log covariance
-  void logGNC(const uint32_t now, const float currentTime,
+  void logGNC(const uint32_t now, 
               const Vector3f& p, const Vector3f& v, const Quaternion& q, const Vector3f& w,  const std::array<float,9>& diagCov, 
               const std::array<int,4>& motorPWM, 
               const std::array<float,4>& controlCMD
               ) {
     if ((now - lastGNC_) >= freqGNC_) {
-      eskfStateData eskfStateSample (currentTime, p, v, q, w);
-      eskfCovarianceData eskfCovarianceSample (currentTime, diagCov);
+      eskfStateData eskfStateSample (now, p, v, q, w);
+      eskfCovarianceData eskfCovarianceSample (now, diagCov);
       eskfStateBuffer_.push(eskfStateSample);
       eskfCovarianceBuffer_.push(eskfCovarianceSample);
 
 
 
       //guidanceData guidSample
-      controlData controlSample(currentTime, controlCMD, motorPWM);
+      controlData controlSample(now, controlCMD, motorPWM);
       controlBuffer_.push(controlSample);
       // GuidBuffer.push(target state);
       // ControlBuffer.push(commanded control);
@@ -143,81 +134,67 @@ public:
 
 
   void flushIMU() {
-    imuData imuSample;
-    static char imuCSVBlock [this->imuCSVSize_];
-    // Keep track of current positions inside csvblocks
-    uint16_t imuPosition = 0;
+    size_t remaining = imuBuffer_.size();
+    //uint32_t start = micros();
+    while (remaining > 0) { //While there is still data in the buffer, equivalent to tail != head
+    uint16_t chunkSize = imuBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
 
-    //Gets the latest imuSample and increments the tail
-    while (this->imuBuffer_.pop(imuSample)) { 
-          // Write to imuCSV (increments imuPosition by number of characters written by snprintf)
-          imuPosition += snprintf(imuCSVBlock + imuPosition, //Write starting at the current end
-                                  this->imuCSVSize_ - imuPosition, //Number of characters left. Ensures that the characters being written is LESS than this value.
-                                  "%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", //6 decimals for time, ax, ay, az, gx, gy, gz
-                                  imuSample.time, imuSample.ax, imuSample.ay, imuSample.az, imuSample.gx, imuSample.gy, imuSample.gz);
-    }
-
-    //Write to IMU file
-    imuFile_.write((uint8_t*)imuCSVBlock, imuPosition); //Write needs pointer to uint8_t data, and size of bytes
-    imuFile_.flush();
+    imuFile_.write(
+      (uint8_t*)imuBuffer_.tailPtr(), //Write starting at the tail pointer
+      chunkSize * sizeof(imuData) // chunkSize is the number of samples in the chunk, sizeof(altData) is the size of each sample in bytes. This ensures that we are writing the correct number of bytes to the file.
+    );
+    imuBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
+    remaining -=chunkSize;
   }
+  // uint32_t dt = micros() - start;
+  // Serial.println(dt);
+  
+  imuFile_.flush();
+  };
 
   void flushTilt() {
-    tiltData tiltSample;
-    static char tiltCSVBlock [this->tiltCSVSize_];
-    // Keep track of current positions inside csvblocks
-    uint16_t tiltPosition = 0;
 
-    //Gets the latest imuSample and increments the tail
-    while (this->tiltBuffer_.pop(tiltSample)) { 
-          // Write to imuCSV (increments imuPosition by number of characters written by snprintf)
-          tiltPosition += snprintf(tiltCSVBlock + tiltPosition, //Write starting at the current end
-                                  this->tiltCSVSize_ - tiltPosition, //Number of characters left. Ensures that the characters being written is LESS than this value.
-                                  "%.4f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", //6 decimals for time, ax, ay, az, gx, gy, gz
-                                  tiltSample.time, tiltSample.orientingVector_x, tiltSample.orientingVector_y, tiltSample.orientingVector_z, tiltSample.nis_x, tiltSample.nis_y, tiltSample.nis_z);
+    while (tiltBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
+      uint16_t chunkSize = tiltBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
+
+      tiltFile_.write(
+        (uint8_t*)tiltBuffer_.tailPtr(), //Write starting at the tail pointer
+        chunkSize * sizeof(tiltData) // chunkSize is the number of samples in the chunk, sizeof(altData) is the size of each sample in bytes. This ensures that we are writing the correct number of bytes to the file.
+      );
+      tiltBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
 
-    //Write to Tilt file
-    tiltFile_.write((uint8_t*)tiltCSVBlock, tiltPosition); //Write needs pointer to uint8_t data, and size of bytes
     tiltFile_.flush();
   }
 
 
   void flushMag() {
-    magData magSample;
-    static char magCSVBlock [this->magCSVSize_]; 
-    // Keep track of current positions inside csvblocks
-    uint16_t magPosition = 0;
 
-    //Gets the latest imuSample and increments the tail
-    while (this->magBuffer_.pop(magSample)) { 
-          magPosition += snprintf(magCSVBlock + magPosition, 
-                                this->magCSVSize_ - magPosition, 
-                                "%.4f,%.6f,%.6f,%.6f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", //6 decimals for time, mx, my, mz
-                                magSample.time, magSample.mx, magSample.my, magSample.mz, magSample.orientingVector_x, magSample.orientingVector_y, magSample.orientingVector_z, magSample.nis_x, magSample.nis_y, magSample.nis_z);
+    while (magBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
+      uint16_t chunkSize = magBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
+
+      magFile_.write(
+        (uint8_t*)magBuffer_.tailPtr(), //Write starting at the tail pointer
+        chunkSize * sizeof(magData) // chunkSize is the number of samples in the chunk, sizeof(altData) is the size of each sample in bytes. This ensures that we are writing the correct number of bytes to the file.
+      );
+      magBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
 
-    //Write to Mag file
-    magFile_.write((uint8_t*)magCSVBlock, magPosition); //Write needs pointer to uint8_t data, and size of bytes
     magFile_.flush();
   }
 
   void flushAlt() {
-    altData altSample;
-    static char altCSVBlock [this->altCSVSize_]; 
-    // Keep track of current positions inside csvblocks
-    uint16_t altPosition = 0;
+    //Write as RAW Binary data for faster write and less SD card wear. Can convert to CSV later offline.
+    while (altBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
+      uint16_t chunkSize = altBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
 
-    //Gets the latest imuSample and increments the tail
-    while (this->altBuffer_.pop(altSample)) { 
-      altPosition += snprintf(altCSVBlock + altPosition, 
-                            this->altCSVSize_ - altPosition, 
-                            "%.4f,%.6f,%.6f,%.6f\n", //6 decimals for time, pressure, height
-                            altSample.time, altSample.pressure, altSample.height, altSample.nis);
+      altFile_.write(
+        (uint8_t*)altBuffer_.tailPtr(), //Write starting at the tail pointer
+        chunkSize * sizeof(altData) // chunkSize is the number of samples in the chunk, sizeof(altData) is the size of each sample in bytes. This ensures that we are writing the correct number of bytes to the file.
+      );
+      altBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
 
-    //Write to Alt file
-    altFile_.write((uint8_t*)altCSVBlock, altPosition); //Write needs pointer to uint8_t data, and size of bytes
     altFile_.flush();
   }
 
@@ -243,66 +220,31 @@ public:
   // }
 
   void flushESKF() {
-    eskfStateData eskfStateSample;
-    static char eskfStateCSVBlock [this->eskfStateCSVSize_]; 
-    // Keep track of current positions inside csvblocks
-    uint16_t eskfStatePosition = 0;
+    //Write as RAW Binary data for faster write and less SD card wear. Can convert to CSV later offline.
+    while (eskfStateBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
+      uint16_t chunkSize = eskfStateBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
 
-    //Gets the latest imuSample and increments the tail
-    while (this->eskfStateBuffer_.pop(eskfStateSample)) { 
-      eskfStatePosition += snprintf(eskfStateCSVBlock + eskfStatePosition, 
-                            this->eskfStateCSVSize_ - eskfStatePosition, 
-                            "%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", 
-                            eskfStateSample.time, 
-                            eskfStateSample.px,eskfStateSample.py, eskfStateSample.pz,
-                            eskfStateSample.vx, eskfStateSample.vy, eskfStateSample.vz,
-                            eskfStateSample.qw, eskfStateSample.qx, eskfStateSample.qy, eskfStateSample.qz,
-                            eskfStateSample.wx, eskfStateSample.wy, eskfStateSample.wz,
-                            eskfStateSample.ba_x, eskfStateSample.ba_y, eskfStateSample.ba_z,
-                            eskfStateSample.bg_x, eskfStateSample.bg_y, eskfStateSample.bg_z,
-                            eskfStateSample.bm_x, eskfStateSample.bm_y, eskfStateSample.bm_z);
+      eskfStateFile_.write(
+        (uint8_t*)eskfStateBuffer_.tailPtr(), //Write starting at the tail pointer
+        chunkSize * sizeof(eskfStateData) // chunkSize is the number of samples in the chunk, sizeof(eskfStateData) is the size of each sample in bytes. This ensures that we are writing the correct number of bytes to the file.
+      );
+      eskfStateBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
-    eskfStateFile_.write((uint8_t*)eskfStateCSVBlock, eskfStatePosition); //Write needs pointer to uint8_t data, and size of bytes
     eskfStateFile_.flush();
-
-    // eskfCovarianceData eskfCovarianceSample;
-    // static constexpr size_t eskfCovarianceCSVSize = 6000;
-    // static char eskfCovarianceCSVBlock [eskfCovarianceCSVSize];
-    // uint16_t eskfCovariancePosition = 0;
-     
-    // while (this->eskfCovarianceBuffer_.pop(eskfCovarianceSample)) { 
-    //   eskfCovariancePosition += snprintf(eskfCovarianceCSVBlock + eskfCovariancePosition, 
-    //                         eskfCovarianceCSVSize - eskfCovariancePosition, 
-    //                         "%.4f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", 
-    //                         eskfStateSample.time, 
-    //                         eskfCovarianceSample.P1,eskfCovarianceSample.P2,eskfCovarianceSample.P3,
-    //                         eskfCovarianceSample.P4,eskfCovarianceSample.P5,eskfCovarianceSample.P6,
-    //                         eskfCovarianceSample.P7,eskfCovarianceSample.P8,eskfCovarianceSample.P9,
-    //                         eskfCovarianceSample.P10,eskfCovarianceSample.P11,eskfCovarianceSample.P12,
-    //                         eskfCovarianceSample.P13,eskfCovarianceSample.P14,eskfCovarianceSample.P15,
-    //                         eskfCovarianceSample.P16,eskfCovarianceSample.P17,eskfCovarianceSample.P18 );
-    // }
-    // eskfCovarianceFile_.write((uint8_t*)eskfCovarianceCSVBlock, eskfCovariancePosition); //Write needs pointer to uint8_t data, and size of bytes
-    // eskfCovarianceFile_.flush();
 
   }
 
 void flushControl() {
-    controlData controlSample;
+   while (controlBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
+      uint16_t chunkSize = controlBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
 
-    static char controlCSVBlock [this->controlCSVSize_]; 
-    // Keep track of current positions inside csvblocks
-    uint16_t controlPosition = 0;
-
-    while (this->controlBuffer_.pop(controlSample)) { 
-      controlPosition += snprintf(controlCSVBlock + controlPosition, 
-                            this->controlCSVSize_ - controlPosition, 
-                            "%.4f,%.6f,%.6f,%.6f,%.6f,%d,%d,%d,%d\n", 
-                            controlSample.time, 
-                            controlSample.Ft, controlSample.Mx, controlSample.My, controlSample.Mz,
-                            controlSample.PWM1, controlSample.PWM2, controlSample.PWM3, controlSample.PWM4);
+      controlFile_.write(
+        (uint8_t*)controlBuffer_.tailPtr(), //Write starting at the tail pointer
+        chunkSize * sizeof(controlData) // chunkSize is the number of samples in the chunk, sizeof(altData) is the size of each sample in bytes. This ensures that we are writing the correct number of bytes to the file.
+      );
+      controlBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
-    controlFile_.write((uint8_t*)controlCSVBlock, controlPosition); //Write needs pointer to uint8_t data, and size of bytes
+
     controlFile_.flush();
   }
 

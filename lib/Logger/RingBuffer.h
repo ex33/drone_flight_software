@@ -37,6 +37,9 @@ public:
         return true;
     }
 
+
+    // Old way to access data inside ring_buffer. This was for when Logger uses while loop.
+    // Instead, see below where chunks of the ring buffer are saved directly
     inline bool pop(T& item) {
         if (tail_ == head_)
             return false;   // empty
@@ -50,6 +53,28 @@ public:
         return (head_ - tail_) & (N - 1);
     }
 
+
+    // For logging purposes, we want to be able to write all data between tail and head to SD card.
+    // These functions helps safely access data from Buffer without making them public (encapsulation)
+
+    // Get the chunk size starting at tail_ WITHOUT wrappoing around. 
+    // Need to call twice in the case head_<tail_ to properly flush the two chunks of data.
+    inline uint16_t chunkSize() const {
+        if (head_ >= tail_) 
+            return head_ - tail_;
+        else
+            return N - tail_;
+    }
+
+    //Safely access the pointer to the start of the chunk of data starting at tail_. This is where we will start writing from.
+    inline const T* tailPtr() const {
+        return &buffer_[tail_];
+    }
+
+    // Move the tail to the end of the chunk we just wrote.
+    inline void advanceTail(uint16_t count) {
+        tail_ = (tail_ + count) & (N - 1); // Wraps "next" once it reaches 511. Keeps 1 empty such that head never equals tail
+    }
 
 private:
     volatile uint16_t head_ = 0;
