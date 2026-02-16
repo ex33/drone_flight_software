@@ -19,7 +19,7 @@ enum class FlightState{
 class FiniteStateMachine {
   public:
     FiniteStateMachine(float frequency)
-    : updatePeriodMS_ (CONSTANTS::seconds2milli/frequency), 
+    : updatePeriodUS_ (CONSTANTS::seconds2micro/frequency), 
       state_ (FlightState::BOOT), 
       timeInState_(0.0f), 
       timeEnterState_(0),
@@ -38,9 +38,9 @@ class FiniteStateMachine {
     };
 
     void update(uint32_t now, Vector3f position, Vector3f velocity, Quaternion quaternion, Vector3f rates) {
-      if (( (now - lastUpdate_) >= this->updatePeriodMS_) && (!criticalError_) ) {
+      if (( (now - lastUpdate_) >= this->updatePeriodUS_) && (!criticalError_) ) {
         lastUpdate_ = now; 
-        timeInState_ = (now - timeEnterState_) / CONSTANTS::seconds2milli;
+        timeInState_ = (now - timeEnterState_) / CONSTANTS::seconds2micro;
 
         // Catch any error first...
         //Calculate the tilt angle
@@ -58,11 +58,11 @@ class FiniteStateMachine {
         }
 
         //Recall "Up" is negative, so position being < -1m represents staying below 1m
-        if (position[2] < -1.0f) { //If we go above the takeoff point, transition back to idle. This is mostly for testing, but also just a safety check
-          transition(now, FlightState::IDLE);
-          criticalError_ = true;
-          return;
-        }
+        // if (position[2] < -1.0f) { //If we go above the takeoff point, transition back to idle. This is mostly for testing, but also just a safety check
+        //   transition(now, FlightState::IDLE);
+        //   criticalError_ = true;
+        //   return;
+        // }
 
 
 
@@ -195,7 +195,7 @@ class FiniteStateMachine {
     FlightState state_;
     uint32_t timeEnterState_;
     float timeInState_;  //Seconds
-    uint32_t updatePeriodMS_;
+    uint32_t updatePeriodUS_;
     uint32_t lastUpdate_;
 
     Vector3f refPosition_ = Vector3f(0.0f, 0.0f, 0.0f);

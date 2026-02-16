@@ -4,12 +4,11 @@
 
 #include <Arduino.h>
 #include "Mathpk.h"
-#include "Servo.h"
 // Motor class 
-// Note that Servo typically runs at 50Hz.
-// This means 1 period is 1/50s --> ~20ms. 
-// So setting a pulse width of 2000 micro s results in off time of ~18ms.
+
 // For ESC, under 500 Hz signal is recommended (satisfied by defulat of servo), and typically has pulse width of 1150 micros - 1950 micro-s
+// BYPASSING SERVO CLASS. LIMITED TO 50HZ, WHICH IS REALLY SLOW 
+
 class Motors {
 public:
 
@@ -66,19 +65,41 @@ public:
 
 
     /**
-   * @brief Command one motor given PWM
+   * @brief Given 4 PWM commands, send the corresponding command
    * 
-   * @param PWM PWM Signal
-   * @param durationMillis duration to run motor for
-   * @param num Motor Number to command (1-4)
+   * @param PWMArray Commanded PWM values for each motor
+   * 
+   * Will compute the PWM value, analogWrite each motor, and update the currentPWM variable for logging.
+   */    
+  void writeESC(const std::array<int,4>& PWMArray);
+
+    /**
+   * @brief Given 1 PWM and the idx of the motor to command, send the corresponding command
+   * 
+   * @param PWM Commanded PWM value for a specific motor
+   * @param idx Index of the motor to command (0-3)
+   * 
+   * Will compute the PWM value, analogWrite the motor, and update the currentPWM variable for logging.
+   */    
+  void writeESC(const int& PWM, const int& idx) ;
+
+
+
+    /**
+   * @brief Command ALL motors given PWM
+   * 
+   * @param PWM  PWM Signal
+   * @param durationMillis Duration to command the motors for (in milliseconds)
+   * @param idx Index of the motor to command (0-3)
    * 
    */    
-  void commandMotors(const int PWM, const uint32_t durationMillis, const int num);
+  void commandMotors(const int PWM, const uint32_t durationMillis, const int idx);
 
     /**
    * @brief Command ALL motors given PWM
    * 
    * @param PWMArray Array of PWM Signal
+   * @param durationMillis Duration to command the motors for (in milliseconds)
    * 
    */    
   void commandMotors(const std::array<int,4> PWMArray, const uint32_t durationMillis);
@@ -112,31 +133,15 @@ public:
       return this->pInvM_;
   };
 
-  inline int getESC1SignalPin() const {
-      return this->esc1SignalPin_;
-  };
-  inline int getESC2SignalPin() const {
-      return this->esc2SignalPin_;
-  };
-  inline int getESC3SignalPin() const {
-      return this->esc3SignalPin_;
-  };
-  inline int getESC4SignalPin() const {
-      return this->esc4SignalPin_;
+  inline int getESCSignalPin(int idx) const {
+      return this->escSignalPins_[idx];
   };
 
-  inline int getM1StartPWM() const {
-      return this->M1StartPWM_;
+
+  inline int getMotorStartPWM(int idx) const {
+      return this->motorStartPWMs_[idx];
   };
-  inline int getM2StartPWM() const {
-      return this->M2StartPWM_;
-  };
-  inline int getM3StartPWM() const {
-      return this->M3StartPWM_;
-  };
-  inline int getM4StartPWM() const {
-      return this->M4StartPWM_;
-  };
+
 
   inline int getMinPWM() const {
     return this->minPWM_;
@@ -154,15 +159,15 @@ public:
   }
 
   inline std::array<int,4> getCurrentMotorPWN() const {
-    return std::array<int,4> {this->currM1PWMInt_, this->currM2PWMInt_, this->currM3PWMInt_, this->currM4PWMInt_};
+    return currMotorPWM_;
   }
 
 private:
-    // Servos 
-    Servo motor1CW_;
-    Servo motor2CCW_;
-    Servo motor3CW_;
-    Servo motor4CCW_;
+  // Motor Parameters
+  constexpr static uint8_t pwmResolution_ = 16; // 16-bit resolution for PWM
+  constexpr static uint16_t pwmRange_ = 65535; // 0 to 65535 for 16-bit resolution
+  constexpr static float pwmFrequency_ = 500.0f; // 500 Hz PWM frequency, which is upper limit of recommended for Hobbywing ESCs
+  constexpr static float periodUS_ = 2000.0f; // Period of PWM signal in microseconds (500 Hz frequency corresponds to 2000 microseconds period)
 
     // Thrust and Torque conversions
     float kT_;
@@ -170,16 +175,10 @@ private:
     float L_;
     std::array<float, 16> pInvM_; // Psuedo Inverse of Allocation Matrix. u = M * n^2 --> n^2 = pinv(M) * u
 
-    // Servo parameters
-    int esc1SignalPin_;
-    int esc2SignalPin_;
-    int esc3SignalPin_;
-    int esc4SignalPin_; 
+    // parameters
+    std::array<int,4> escSignalPins_;
+    std::array<int,4> motorStartPWMs_;
 
-    int M1StartPWM_;
-    int M2StartPWM_;
-    int M3StartPWM_;
-    int M4StartPWM_;
 
     int minPWM_;
     int maxPWM_;
@@ -188,12 +187,9 @@ private:
     float maxSpinSquare_;
  
     bool armed_ = false; //Todo:: for all functions, if this bool is false, should it automatically set PWM to min?
-
+    bool setUp_ = false; //Flag to make sure we only set up once. 
     //Servo Commands (for logging)
-    int currM1PWMInt_;
-    int currM2PWMInt_;
-    int currM3PWMInt_;
-    int currM4PWMInt_;
+    std::array<int,4> currMotorPWM_;
 
 
 };

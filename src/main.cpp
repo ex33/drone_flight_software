@@ -4,7 +4,6 @@
 #include <Arduino.h> //Platformio doesn't insert this at compile time like Ardiuno does
 #include <Wire.h> //Communicate w/ I2C devices
 #include <SD.h> //SD card
-#include <Servo.h> //Motor PWM command generation
 //===== User / Custom =====
 #include <Mathpk.h>
 #include "FiniteStateMachine.h"
@@ -81,7 +80,7 @@ void preflightCheck() {
   while (!Serial) {
     //Do nothing until serial monitor is opened
   };
-  //delay(5000);
+  delay(5000);
 
   // Start the the SD Card
   if (!SD.begin(SD_CS)) {
@@ -112,7 +111,7 @@ void preflightCheck() {
   digitalWrite(LED_BUILTIN, HIGH); // High to let us know its calibrating
   Serial.println("Calibrating Sensors...");
 
-  sensors.calibrateSensors(1); // Get IMU Bias, checks GPS lock
+  sensors.calibrateSensors(15); // Get IMU Bias, checks GPS lock
 
   // Pass Magnetometer Reference to ESKF. Either user defined, or from sensor calibration
   eskf.setMagRef(sensors.getMagRefForFilter());
@@ -146,10 +145,7 @@ void preflightCheck() {
 void setup() {
   //Setup helper functions (mostly for calibration and testing)
   //SETUP::SETUP_Offboard_Calibration(sensors);
-  //SETUP::SETUP_Calibrate_Motor_Individual(motors,1);
-  //SETUP::SETUP_Calibrate_Motor_Individual(motors,2);
-  //SETUP::SETUP_Calibrate_Motor_Individual(motors,3);
-  //SETUP::SETUP_Calibrate_Motor_Individual(motors,4);
+  //SETUP::SETUP_Calibrate_All_Motors(motors);
   
   //SETUP::SETUP_Find_Motors_Start(motors);
   //SETUP::SETUP_Find_Motor_Directions(motors);
@@ -265,6 +261,7 @@ void loop() {
       if (fsm.getMotorFlag()) {
         motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
       };
+      //motors.printPWMCMD();
       //Serial.println(motors.getArmedBool());
       //åmotors.printPWMCMD(); //For debugging
     }

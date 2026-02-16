@@ -126,7 +126,7 @@ private:
   Vector3f rateErr_;
 
   //Frequency to run LQR Controller at
-  float freq_;
+  uint32_t freq_;
 
   // Time since last controller ran
   uint32_t lastUpdate_ = 0;

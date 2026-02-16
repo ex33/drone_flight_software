@@ -4,7 +4,6 @@
 
 
 #include <Arduino.h> //Platformio doesn't insert this at compile time like Ardiuno does
-#include <Servo.h>
 #include <Sensors.h>
 #include <Constants.h>
 #include <Logger.h>
@@ -218,20 +217,49 @@ void SETUP_Offboard_Calibration(Sensors& sensors) {
 
 };
 
+
+void SETUP_Calibrate_All_Motors(Motors& motors) {
+  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  while (!Serial) {
+    //Do nothing until serial monitor is opened
+  };
+
+  motors.setUp();
+  // For calibration, start motor HIGH, then low. This is opposite of flight commands which must start LOW
+  for (int i=0; i<=3; i++) {
+    Serial.print("Starting Motor ");
+    Serial.print(i+1);
+    Serial.println(" High");
+    motors.writeESC(SETUP::maxPWM, i); //Need to directly write. CommandMotors requires arming.
+    delay(3000);
+    Serial.print("Starting Motor ");
+    Serial.print(i+1);
+    Serial.println(" Low");
+    motors.writeESC(SETUP::minPWM, i);
+    Serial.println("Done");
+    delay(3000);
+  }
+  
+  while(1) {};
+};
+
 // Need to Upload, plug in battery, then open serial monitor. Cann't have battery already plugged. Do it all one by one for more consistent results
 void SETUP_Calibrate_Motor_Individual(Motors& motors, int num) {
   Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
   while (!Serial) {
     //Do nothing until serial monitor is opened
   };
+
+  motors.setUp();
   // For calibration, start motor HIGH, then low. This is opposite of flight commands which must start LOW
   // Calibrate Motor 1 
   Serial.print("Starting Motor ");
   Serial.print(num);
   Serial.println(" High");
-  motors.commandMotors(SETUP::maxPWM, 3000, num); // Maximum throttle for 3 seconds
+  motors.writeESC(SETUP::maxPWM, num); //Need to directly write. CommandMotors requires arming.
+  delay(3000);
   Serial.println("Starting Motor 1 Low");
-  motors.commandMotors(SETUP::minPWM, 3000, num); // Minimum throttle for 3 seconds
+  motors.writeESC(SETUP::minPWM, num);
   Serial.println("Done");
   while(1) {};
 };
@@ -247,70 +275,24 @@ void SETUP_Find_Motors_Start(Motors& motors) {
   motors.setUp();
   motors.arm();
 
-  //Find the off-set needed after calibration
-  Serial.println("Starting Motor 1 1175");
-  motors.commandMotors(1175, 2000, 1);
-  Serial.println("Starting Motor 1 1180");
-  motors.commandMotors(1180, 2000, 1);
-  Serial.println("Starting Motor 1 1185");
-  motors.commandMotors(1185, 2000, 1);
-  Serial.println("Starting Motor 1 1190");
-  motors.commandMotors(1190, 2000, 1);
-  Serial.println("Starting Motor 1 1195");
-  motors.commandMotors(1195, 2000, 1);
-  Serial.println("Starting Motor 1 1200");
-  motors.commandMotors(1200, 2000, 1);
-  Serial.println("Starting Motor 1 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 1);
-
-  // Find the off-set needed after calibration
-  Serial.println("Starting Motor 2 1175");
-  motors.commandMotors(1175, 2000, 2);
-  Serial.println("Starting Motor 2 1180");
-  motors.commandMotors(1180, 2000, 2);
-  Serial.println("Starting Motor 2 1185");
-  motors.commandMotors(1185, 2000, 2);
-  Serial.println("Starting Motor 2 1190");
-  motors.commandMotors(1190, 2000, 2);
-  Serial.println("Starting Motor 2 1195");
-  motors.commandMotors(1195, 2000, 2);
-  Serial.println("Starting Motor 2 1200");
-  motors.commandMotors(1200, 2000, 2);
-  Serial.println("Starting Motor 2 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 2);
-
-  // Find the off-set needed after calibration
-  Serial.println("Starting Motor 3 1175");
-  motors.commandMotors(1175, 2000, 3);
-  Serial.println("Starting Motor 3 1180");
-  motors.commandMotors(1180, 2000, 3);
-  Serial.println("Starting Motor 3 1185");
-  motors.commandMotors(1185, 2000, 3);
-  Serial.println("Starting Motor 3 1190");
-  motors.commandMotors(1190, 2000, 3);
-  Serial.println("Starting Motor 3 1195");
-  motors.commandMotors(1195, 2000, 3);
-  Serial.println("Starting Motor 3 1200");
-  motors.commandMotors(1200, 2000, 3);
-  Serial.println("Starting Motor 3 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 3);
-
-  // Find the off-set needed after calibration
-  Serial.println("Starting Motor 4 1175");
-  motors.commandMotors(1175, 2000, 4);
-  Serial.println("Starting Motor 4 1180");
-  motors.commandMotors(1180, 2000, 4);
-  Serial.println("Starting Motor 4 1185");
-  motors.commandMotors(1185, 2000, 4);
-  Serial.println("Starting Motor 4 1190");
-  motors.commandMotors(1190, 2000, 4);
-  Serial.println("Starting Motor 4 1195");
-  motors.commandMotors(1195, 2000, 4);
-  Serial.println("Starting Motor 4 1200");
-  motors.commandMotors(1200, 2000, 4);
-  Serial.println("Starting Motor 4 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 4);
-
+  for (int i=0; i<=3; i++) {
+    Serial.print("Starting Motor ");
+    Serial.print(i+1);
+    Serial.println(" 1190");
+    motors.commandMotors(1190, 2000, i);
+    Serial.print("Starting Motor ");
+    Serial.print(i+1);
+    Serial.println(" 1195");
+    motors.commandMotors(1195, 2000, i);
+    Serial.print("Starting Motor ");   
+    Serial.print(i+1);
+    Serial.println(" 1200");
+    motors.commandMotors(1200, 2000, i);
+    Serial.print("Starting Motor ");
+    Serial.print(i+1);
+    Serial.println(" Low");
+    motors.commandMotors(SETUP::minPWM, 2000, i);
+  }
 
   Serial.println("Done");
   while(1) {};

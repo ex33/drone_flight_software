@@ -54,8 +54,7 @@ void Controller::updateError(const Vector3f& p_hat, const Vector3f& v_hat, const
 
 bool Controller::updateControl( uint32_t now, const Vector3f& p_hat, const Vector3f& v_hat, const Quaternion& q_hat, const Vector3f& w_hat) {
   //Check if enough time has passed.
-  uint32_t dt = now - lastUpdate_; //Wraps value 
-  if (static_cast<float>(dt) >= this->freq_) {
+  if (now - lastUpdate_ >= this->freq_) {
     lastUpdate_ = now;
     //1. Update the Error 
     this->updateError(p_hat, v_hat, q_hat, w_hat);
