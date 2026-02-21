@@ -3,6 +3,7 @@
 
 #include "Mathpk.h"
 #include "Constants.h"
+#include "Logger.h" //For data types
 enum class FlightState{
   BOOT,
   IDLE,
@@ -82,33 +83,40 @@ class FiniteStateMachine {
 
           case (FlightState::ATTITUDE_STAND) :{
             //This allows control at entry
-            float timestep = 3.0f; //Time to hold each attitude command
+            float timestep = 4.0f; //Time to hold each attitude command
             float initial_hold_time = 10.0f; //Time to hold initial attitude before starting the different commands
-            float final_hold_delay = 20.0f; //Time to hold the final attitude command before exiting out of this state. 
+            float final_hold_delay = 10.0f; //Time to hold the final attitude command before exiting out of this state. 
+
+            // if (timeInState_ < initial_hold_time) {
+            //   refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f); 
+            // } else {
+            //   transition(now, FlightState::BOOT); 
+            // }
+
             if (timeInState_ < initial_hold_time) {
               refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f); 
             } else if(timeInState_<initial_hold_time+timestep && timeInState_ >=initial_hold_time) {
-              refQuaternion_ = Quaternion(0.9914f, 0.1305f,0.0f,0.0f); //Command Positive Roll by 15 degrees
+              refQuaternion_ = Quaternion(0.9659f, 0.2588f,0.0f,0.0f); //Command Positive Roll by 15 degrees
             } else if(timeInState_<initial_hold_time+2*timestep && timeInState_ >=initial_hold_time+timestep) {
               refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);  //Reset to Initial
             } else if(timeInState_<initial_hold_time+3*timestep && timeInState_ >=initial_hold_time+2*timestep) {
-              refQuaternion_ = Quaternion(0.9914f, -0.1305f,0.0f,0.0f); //Command Negative Roll
+              refQuaternion_ = Quaternion(0.9659f, -0.2588f,0.0f,0.0f); //Command Negative Roll
             } else if (timeInState_<initial_hold_time+4*timestep && timeInState_ >=initial_hold_time+3*timestep) {
               refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);  //Reset to Initial
             } else if (timeInState_<initial_hold_time+5*timestep && timeInState_ >=initial_hold_time+4*timestep) {
-              refQuaternion_ = Quaternion(0.9914f, 0.0f ,0.1305f ,0.0f); //Command Positive Pitch by 15 degrees
+              refQuaternion_ = Quaternion(0.9659f, 0.0f ,0.2588f ,0.0f); //Command Positive Pitch by 15 degrees
             } else if (timeInState_<initial_hold_time+6*timestep && timeInState_ >=initial_hold_time+5*timestep) {
               refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);  //Reset to Initial
             } else if (timeInState_<initial_hold_time+7*timestep && timeInState_ >=initial_hold_time+6*timestep) {
-              refQuaternion_ = Quaternion(0.9914f, 0.0f ,-0.1305f ,0.0f); //Command Negative Pitch
+              refQuaternion_ = Quaternion(0.9659f, 0.0f ,-0.2588f ,0.0f); //Command Negative Pitch
             } else if (timeInState_<initial_hold_time+8*timestep && timeInState_ >=initial_hold_time+7*timestep) {
               refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);  //Reset to Initial
             } else if (timeInState_<initial_hold_time+9*timestep && timeInState_ >=initial_hold_time+8*timestep) {
-              refQuaternion_ = Quaternion(0.9914f, 0.0f, 0.0f, 0.1305f); //Command Positive Yaw
+              refQuaternion_ = Quaternion(0.9659f, 0.0f, 0.0f, 0.2588f); //Command Positive Yaw
             } else if (timeInState_<initial_hold_time+10*timestep && timeInState_ >=initial_hold_time+9*timestep) {
               refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);  //Reset to Initial
             } else if (timeInState_<initial_hold_time+11*timestep && timeInState_ >=initial_hold_time+10*timestep) {
-              refQuaternion_ = Quaternion(0.9914f, 0.0f, 0.0f, -0.1305f ); //Command Negative Yaw
+              refQuaternion_ = Quaternion(0.9659f, 0.0f, 0.0f, -0.2588f ); //Command Negative Yaw
             } else if (timeInState_ < initial_hold_time+11*timestep+final_hold_delay && timeInState_ >=initial_hold_time+11*timestep) { //After going through all the different attitude commands, exit out of this state
               refQuaternion_ = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);  //Reset to Initial
             } else{
@@ -190,6 +198,10 @@ class FiniteStateMachine {
     inline Vector3f getRates() {
       return this->refRates_;
     };
+
+    inline FlightState getCurrentState(){
+      return this->state_;
+    }
 
   private:
     FlightState state_;

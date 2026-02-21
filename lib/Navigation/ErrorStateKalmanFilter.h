@@ -5,7 +5,6 @@
 #include "Mathpk.h"
 #include "Sensors.h"
 #include "Constants.h"
-#include "DataTypes.h"
 class ErrorStateKalmanFilter {
 public:
 
@@ -100,7 +99,7 @@ public:
      *
      * @return Struct containing relevant IMU data from this update
      */
-    tiltData updateTiltMeas(const std::array<float,3> accelMeas);
+    void updateTiltMeas(const std::array<float,3> accelMeas);
 
     /**
      * @brief Given magnetometer measurement, perform update step.
@@ -109,7 +108,7 @@ public:
      *
      * @return Struct containing relevant Magnetometer data from this update
      */
-    magData updateMagMeas(const std::array<float,3> magMeas);
+    void updateMagMeas(const std::array<float,3> magMeas);
 
         /**
      * @brief Given altimeter measurement, perform update step.
@@ -118,7 +117,7 @@ public:
      *
      * @return Struct containing relevant Altimeter data from this update
      */
-    altData updateAltMeas(const float altMeas);
+    void updateAltMeas(const float altMeas);
 
         /**
      * @brief Given gps measurement, perform update step.
@@ -127,7 +126,7 @@ public:
      *
      * @return Struct containing relevant GPS data from this update
      */
-    gpsData updateGPSMeas(const std::array<float,4> gpsMeas);
+    void updateGPSMeas(const std::array<float,4> gpsMeas);
      /**
      * @brief Sequentially updates filter with ONE element of the tilt / magnetometer reading 
      * 
@@ -262,7 +261,7 @@ public:
      * This is what takes the estimate from priori to posteriori
      */
     inline void injectError() {
-        if (this->updateFlag) {
+        if (this->updateFlag_) {
             // Unpack Errors
             Vector3f del_p (this->del_xk[0], this->del_xk[1], this->del_xk[2]);
             Vector3f del_v (this->del_xk[3], this->del_xk[4], this->del_xk[5]);
@@ -279,7 +278,10 @@ public:
 
             //Reset error states
             this->del_xk = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f};
-            updateFlag = false;
+            updateFlag_ = false;
+            if (this->tiltFlag_) { //Flip this back low if a tilt measurement was used
+                tiltFlag_ = false;
+            }
         }
 
     };
@@ -317,6 +319,31 @@ public:
         return this->Qd_;
     };
 
+    inline Vector3f getTiltMeas() const {
+        return this->tiltMeas_;
+    };
+
+    inline bool getTiltFlag() const {
+        return this->tiltFlag_;
+    };
+
+    inline std::array<float,4> getGPSNIS() const{
+        return this->nisGPS_;
+    };
+
+    inline std::array<float,3> getTiltNIS() const{
+        return this->nisTilt_;
+    };
+
+    inline std::array<float,3> getMagNIS() const{
+        return this->nisMag_;
+    };
+
+    inline float getAltNIS() const{
+        return this->nisAlt_;
+    };
+
+
     inline float getSigAcc() const {
         return this -> sigAcc_;
     }
@@ -339,6 +366,8 @@ public:
     inline float getSigGPSVel() const {
         return this -> sigGPSVel_;
     }
+
+
 
     //DEBUGGING
     inline float getDT() const {
@@ -387,11 +416,13 @@ private:
     Matrix9f P_k; //This is the covariance of the ERROR State
 
     // NIS
-    std::array<float,4> nisGPS;
-    std::array<float,3> nisMag;
-    std::array<float,3> nisTilt;
-    float nisAlt;
+    std::array<float,4> nisGPS_;
+    std::array<float,3> nisMag_;
+    std::array<float,3> nisTilt_;
+    float nisAlt_;
 
+    // Tilt measurement (for logging)
+    Vector3f tiltMeas_;
 
     //Process Noise
     Matrix9f Qd_;
@@ -415,7 +446,8 @@ private:
     // Need a way to now if lastFilterTime is initialized or not to keep prediction timestep properly logged
     uint32_t lastFilterTime = UINT32_MAX; //General time that gets set after each prediction and update, in case measurements wants to be processed seperately
 
-    bool updateFlag; 
+    bool updateFlag_;
+    bool tiltFlag_; 
     bool nisGatingFlag_;
 };
 #endif // ESKF_H

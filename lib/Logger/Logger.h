@@ -19,11 +19,12 @@ template <
 class Logger {
 
 public:
-  Logger(float logFlushFrequency, float logIMUDataFrequency, float logMagDataFrequency, float logAltDataFrequency, float logGPSDataFrequency, float logGNCDataFrequency,
+  Logger(float logWriteFrequency, float logFlushFrequency, float logIMUDataFrequency, float logMagDataFrequency, float logAltDataFrequency, float logGPSDataFrequency, float logGNCDataFrequency,
     RingBuffer<imuData, IMU_N>& imuBuffer, RingBuffer<tiltData, IMU_N>& tiltBuffer, RingBuffer<magData, MAG_N>& magBuffer ,RingBuffer<altData,ALT_N>& altBuffer ,RingBuffer<gpsData, GPS_N>& gpsBuffer,
     RingBuffer<eskfStateData, GNC_N>& eskfStateBuffer, RingBuffer<eskfCovarianceData, GNC_N>& eskfCovarianceBuffer, RingBuffer<controlData, GNC_N>& controlBuffer):
     imuBuffer_(imuBuffer), tiltBuffer_(tiltBuffer), magBuffer_(magBuffer), altBuffer_(altBuffer), gpsBuffer_(gpsBuffer), eskfStateBuffer_(eskfStateBuffer), eskfCovarianceBuffer_(eskfCovarianceBuffer), controlBuffer_(controlBuffer)
   {
+    freqWrite_ = CONSTANTS::seconds2micro/logWriteFrequency;
     freqFlush_ = CONSTANTS::seconds2micro/logFlushFrequency; 
     freqIMU_ = CONSTANTS::seconds2micro/logIMUDataFrequency; 
     freqMag_ = CONSTANTS::seconds2micro/logMagDataFrequency; 
@@ -41,7 +42,7 @@ public:
       SD.mkdir("FLIGHT_DATA");
     }
 
-    //imuFile_ = SD.open("FLIGHT_DATA/imu.bin", FILE_WRITE);
+    imuFile_ = SD.open("FLIGHT_DATA/imu.bin", FILE_WRITE);
     tiltFile_ = SD.open("FLIGHT_DATA/tilt.bin", FILE_WRITE);
     magFile_ = SD.open("FLIGHT_DATA/mag.bin", FILE_WRITE);
     altFile_ = SD.open("FLIGHT_DATA/alt.bin", FILE_WRITE);
@@ -56,9 +57,7 @@ public:
     if ( (now - lastIMU_) >= freqIMU_) {
       imuBuffer_.push(imuSample);
 
-      if (tiltSample.tiltUsed) {
-        tiltBuffer_.push(tiltSample);
-      }
+      tiltBuffer_.push(tiltSample);
 
       lastIMU_ = now;
     }
@@ -133,7 +132,7 @@ public:
   }
 
 
-  void flushIMU() {
+  void writeIMU() {
     size_t remaining = imuBuffer_.size();
     //uint32_t start = micros();
     while (remaining > 0) { //While there is still data in the buffer, equivalent to tail != head
@@ -146,13 +145,10 @@ public:
     imuBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     remaining -=chunkSize;
   }
-  // uint32_t dt = micros() - start;
-  // Serial.println(dt);
-  
-  imuFile_.flush();
+
   };
 
-  void flushTilt() {
+  void writeTilt() {
 
     while (tiltBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
       uint16_t chunkSize = tiltBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
@@ -163,12 +159,10 @@ public:
       );
       tiltBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
-
-    tiltFile_.flush();
   }
 
 
-  void flushMag() {
+  void writeMag() {
 
     while (magBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
       uint16_t chunkSize = magBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
@@ -180,10 +174,9 @@ public:
       magBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
 
-    magFile_.flush();
   }
 
-  void flushAlt() {
+  void writeAlt() {
     //Write as RAW Binary data for faster write and less SD card wear. Can convert to CSV later offline.
     while (altBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
       uint16_t chunkSize = altBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
@@ -194,8 +187,6 @@ public:
       );
       altBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
-
-    altFile_.flush();
   }
 
   // void flushGPS() {
@@ -219,7 +210,7 @@ public:
   //   gpsFile_.flush();
   // }
 
-  void flushESKF() {
+  void writeESKF() {
     //Write as RAW Binary data for faster write and less SD card wear. Can convert to CSV later offline.
     while (eskfStateBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
       uint16_t chunkSize = eskfStateBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
@@ -230,11 +221,11 @@ public:
       );
       eskfStateBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
-    eskfStateFile_.flush();
+
 
   }
 
-void flushControl() {
+void writeControl() {
    while (controlBuffer_.size() > 0) { //While there is still data in the buffer, equivalent to tail != head
       uint16_t chunkSize = controlBuffer_.chunkSize(); //Get the size of the chunk starting at tail}
 
@@ -244,36 +235,61 @@ void flushControl() {
       );
       controlBuffer_.advanceTail(chunkSize); // Move tail to end of chunk we just wrote
     }
+  }
 
+  void write(uint32_t now) {
+    if (now - this->lastWrite_ >= this->freqWrite_) {
+      writeIMU();
+      writeTilt();
+      writeMag();
+      writeAlt();
+      //writeGPS();
+      writeESKF();
+      writeControl();
+
+      this->lastWrite_ = now;
+    };
+  }
+
+  //Note: Push data to the buffers directly outside. Logger will have access to the buffer via reference.
+  void flush(uint32_t now){
+
+    if (now - this->lastFlush_ >= this->freqFlush_) { //Initialize lastFlush_ the first time this is called
+      this->lastFlush_ = now;
+   
+      imuFile_.flush();
+      tiltFile_.flush();
+      magFile_.flush();
+      altFile_.flush();
+      eskfStateFile_.flush();
+      controlFile_.flush();
+
+      //flushGPS();
+    };
+  };
+
+  void forceWriteAndFlush() {
+    writeIMU();
+    writeTilt();
+    writeMag();
+    writeAlt();
+    //writeGPS();
+    writeESKF();
+    writeControl();
+
+    imuFile_.flush();
+    tiltFile_.flush();
+    magFile_.flush();
+    altFile_.flush();
+    eskfStateFile_.flush();
     controlFile_.flush();
   }
 
 
-  //Note: Push data to the buffers directly outside. Logger will have access to the buffer via reference.
-  void flush(uint32_t now){
-    if (this->lastLog_ == UINT32_MAX) { //Initialize lastLog_ the first time this is called
-      this->lastLog_ = now;
-    } else { //If lastLog_ is initialized...
-      if ((now - this->lastLog_) >= this->freqFlush_){
-        //Break them up into functions to have more ram on the stack
-        flushIMU();
-        flushTilt();
-        flushMag();
-        flushAlt();
-        flushESKF();
-        flushControl();
-
-        //flushGPS();
-
-        this->lastLog_ = now;
-      } ;
-    };
-  };
-
-
 private: 
   //Frequencies (in micro-seconds)
-  uint32_t freqFlush_; 
+  uint32_t freqFlush_ = 0;
+  uint32_t freqWrite_ = 0;
 
   //Used to preallocate csv blocks
   uint32_t freqIMU_;
@@ -281,7 +297,6 @@ private:
   uint32_t freqAlt_;
   uint32_t freqGPS_;
   uint32_t freqGNC_;
-
 
   //Buffers
   RingBuffer<imuData, IMU_N>& imuBuffer_;
@@ -303,19 +318,10 @@ private:
   File eskfCovarianceFile_;
   File controlFile_;
 
-  //CSV BLock Sizes (Putting down here for eaiser access)
-   // # inputs * 11 * Freq Sensor Log / Freq Flush 
-  static constexpr size_t imuCSVSize_ = 2000; // 7 * 11 * 200/10 = 1540 characters
-  static constexpr size_t tiltCSVSize_ = 2000; // 7 * 11 * 200/10 = 1540 characters
-  static constexpr size_t magCSVSize_ = 1000; // 10 * 11 * 50/10 = 550 characters 
-  static constexpr size_t altCSVSize_ = 200; // 4 * 11 * 25/10 = 110 characters 
-  static constexpr size_t gpsCSVSize_ = 100; // 5 * 11 * 1/10 = 5.5 characters, Only need enough to fit 1 line
-  static constexpr size_t eskfStateCSVSize_ = 6000; // 23 * 11 * 200/10 = 5060 characters,
-  static constexpr size_t eskfCovarianceCSVSize_ = 4500; //UNUSED for now since we are not logging covariance. 18 * 11 * 200/10 = 3960 characters
-  static constexpr size_t controlCSVSize_ = 2500; // 9 * 11 * 200/10 = 1980 characters
 
   //Timer related 
-  uint32_t lastLog_ = 0;
+  uint32_t lastWrite_ = 0;
+  uint32_t lastFlush_ = 0;
   uint32_t lastIMU_ = 0;
   uint32_t lastMag_ = 0;
   uint32_t lastAlt_ = 0;

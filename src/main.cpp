@@ -60,7 +60,7 @@ Logger<SETUP::imuRingBufferSize,
       SETUP::magRingBufferSize, 
       SETUP::altRingBufferSize, 
       SETUP::gpsRingBufferSize, 
-      SETUP::gncRingBufferSize> logger(SETUP::logFlushFrequency,SETUP::logIMUDataFrequency, SETUP::logMagDataFrequency, SETUP::logAltDataFrequency, SETUP::logGPSDataFrequency, SETUP::logGNCDataFrequency,
+      SETUP::gncRingBufferSize> logger(SETUP::logWriteFrequency, SETUP::logFlushFrequency, SETUP::logIMUDataFrequency, SETUP::logMagDataFrequency, SETUP::logAltDataFrequency, SETUP::logGPSDataFrequency, SETUP::logGNCDataFrequency,
                                         imuBuffer, tiltBuffer, magBuffer, altBuffer, gpsBuffer, eskfStateBuffer, eskfCovarianceBuffer, controlBuffer);
 
 //============================TIMING============================
@@ -76,10 +76,10 @@ uint32_t dt;
 
 int counter = 0;
 void preflightCheck() {
-  Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
-  while (!Serial) {
-    //Do nothing until serial monitor is opened
-  };
+  // Serial.begin(9600); //Init. serial communication between Teensy and Computer. Only need this for debugging. 
+  // while (!Serial) {
+  //   //Do nothing until serial monitor is opened
+  // };
   delay(5000);
 
   // Start the the SD Card
@@ -96,6 +96,7 @@ void preflightCheck() {
   }
 
   Wire.begin(); //Initializes default I2C bus (SDA / SCL pins)
+  Wire.setClock(400000); //Set to 400kHz for fast mode, which all our sensors support. Don't think this actually does anything
   pinMode(LED_BUILTIN, OUTPUT); //Configure built in LED 
   // ------------- Sensor Checkout and Setup -----------------
   // Determine if we want to run with GPS or not
@@ -127,8 +128,6 @@ void preflightCheck() {
   motors.setUp();
   motors.arm(); //Eventually move this to be the very last thing to occur after checking through
   // // Do some delay before the start
-
-
 
   logger.begin(); //Start logger
 
@@ -169,7 +168,10 @@ void loop() {
   //======= Run Sensors / Navigation ======
   //-------IMU Loop (Frequency Determined by SETUP::imuFrequency)--------
   // Each loop takes ~42 micro seconds!
-  // However, each measurement takes ~3000 micro seconds. Need to move away from the blocking getEvent function to ensure we don't miss measurements.
+  // Each measurement using Adafruit library takes ~3000 micro seconds
+  // Own i2c implementation takes ~1400 micro seonconds.
+  // Need to consider moving to SPI implementation if we want to get faster than this,
+  //start = micros();
   if (sensors.imuUpdate(loop_start_time)) {
     //start = micros();
     // Obtain RAW measurements
@@ -180,17 +182,25 @@ void loop() {
     eskf.predict(imuMeas, loop_start_time);
     //Set up Data Samples for logging
     imuData imuSample (loop_start_time, imuMeas); //Raw imu measurement isn't super helpful
+    tiltData tiltSample(loop_start_time);
+    if (fsm.getCurrentState() == FlightState::ATTITUDE_STAND) {
+      // Do nothing. Will just log the time.
+    } else {
+      // Update State Estimate with Tilt if magnitude of acceleration is small enough
+      eskf.updateTiltMeas(std::array<float,3> {imuMeas[0], imuMeas[1], imuMeas[2]});
 
-    // Update State Estimate with Tilt if magnitude of acceleration is small enough
-    tiltData tiltSample = eskf.updateTiltMeas(std::array<float,3> {imuMeas[0], imuMeas[1], imuMeas[2]});
-    tiltSample.tagData(loop_start_time); //Tag the current time here
+      if (eskf.getTiltFlag()) {
+        tiltSample.setData(eskf.getTiltMeas().getArray(), eskf.getTiltNIS());
+      };
+    }
 
     //Push to Buffer (Frequency determined by SETUP::logIMUDataFrequency)
     logger.logIMU(loop_start_time, imuSample, tiltSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements) 
     //dt = micros() - start;
     //Serial.println(dt);
   }
-
+  //dt = micros() - start;
+  //Serial.println(dt);
 
   //-------Magnetometer Loop (Frequency Determined by SETUP::magFrequency)--------
   // Each loop takes ~8-9 micro seconds. HOWEVER, obtaining the measurement is ~800 micro seconds
@@ -200,8 +210,15 @@ void loop() {
     std::array<float,3> magMeasRaw = sensors.getMagMeas();
     // Process Measurement
     std::array<float,3> magMeas = sensors.processMagMeas(magMeasRaw);
-    magData magSample = eskf.updateMagMeas(magMeas);
-    magSample.tagData(loop_start_time); //Tag the current time here
+    magData magSample(loop_start_time);
+    if (fsm.getCurrentState() == FlightState::ATTITUDE_STAND) {
+      //This is for testing. If we are controlling the motors, log the data but do NOT update the filter.
+      magSample.setData(magMeas, std::array<float,3>{0.0f, 0.0f, 0.0f});
+    } else {
+      eskf.updateMagMeas(magMeas);
+
+      magSample.setData(magMeas, eskf.getMagNIS());
+    };
 
     //Push to Buffer (Frequency determined by SETUP::logMagDataFrequency)
     logger.logMag(loop_start_time, magSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
@@ -219,10 +236,9 @@ void loop() {
     // Process Measurement
     float altMeas = sensors.processAltMeas(altMeasRaw);
     // Update State Estimate with Altimeter (tecnically should have a very tiny dt to predict between previous loop to this one, but that should be negliable)
-    altData altSample = eskf.updateAltMeas(altMeas);
+    eskf.updateAltMeas(altMeas);
 
-    altSample.setPressureData(altMeasRaw); //Save down the pressure
-    altSample.tagData(loop_start_time); //Tag the current time here
+    altData altSample(loop_start_time, altMeasRaw, altMeas, eskf.getAltNIS());
 
     //Push to Buffer (Frequency determined by SETUP::logAltDataFrequency)
     logger.logAlt(loop_start_time, altSample); //For now, the buffer is ONLY used for logging so its logging at a slower frequency than sensor itself. Will revisit to buffer every measurement if buffer has other use (like back propagating for missed measurements)
@@ -246,6 +262,7 @@ void loop() {
   eskf.injectError(); // Inject Error of the eskf if there were any updates (uses a flag internally here)
 
 
+
   // //-------- Run Finite State Machine ---------
   fsm.update(loop_start_time, eskf.getPosition(), eskf.getVelocity(), eskf.getQuaternion(), eskf.getBodyRates());
 
@@ -262,15 +279,14 @@ void loop() {
         motors.commandControl(uCMD); //uCMD is in terms of spinrate squared, so motor just needs to map this to a PWM
       };
       //motors.printPWMCMD();
-      //Serial.println(motors.getArmedBool());
-      //åmotors.printPWMCMD(); //For debugging
     }
   
   }
   if (fsm.getCriticalErrorFlag()) { //Disarm motors
     motors.disarm();
+    //Forcefully log data
+    logger.forceWriteAndFlush();
     while(1){};
-    //Serial.println(fsm.getMotorFlag());
   }
 
 
@@ -288,7 +304,11 @@ void loop() {
 
   // Flush log (Frequency determined by SETUP::logFlushFrequency)
 
-  logger.flush(loop_start_time); //This is VERY slow. Takes ~14000 microseconds (0.01 second)
+  logger.write(loop_start_time); //This is the frequency we write to the file. ~6000 micro seconds...
+  //start = micros();
+  logger.flush(loop_start_time); //This is the frequency we flush each file.  This can take up to 9000 micro seconds
+  // dt = micros() - start;
+  // Serial.println(dt);
 }
 
 

@@ -10,8 +10,7 @@
 //===== Adafruit =====
 #include <Adafruit_Sensor.h>
 // IMU
-#include <Adafruit_ICM20X.h>
-#include <Adafruit_ICM20649.h>
+#include "ICM20649.h"
 // Magnetometer
 #include <Adafruit_LIS2MDL.h>
 // Altimeter
@@ -21,7 +20,7 @@
 
 #include <Mathpk.h>
 #include <Constants.h>
-
+#include <Wire.h>
 class Sensors {
 public:
 
@@ -84,27 +83,6 @@ public:
     bool finalArmingCheck();
 
     // -------------------------- IMU Functions ------------------------------
-    /**
-    * @brief Sets the accelerometer and gyroscope measurement range
-    * 
-    * @param accelRange The accelerometer range (enum: icm20649_accel_range_t)
-    * @param gyroRange The gyroscope range (enum: icm20649_gyro_range_t)
-    *
-    * This function configures the IMU member (imu_) with the
-    * requested measurement ranges.
-    */
-    void setIMUDataRange(icm20649_accel_range_t accelRange,icm20649_gyro_range_t gyroRange);
-
-    /**
-    * @brief Sets the accelerometer and gyroscope output divisor rate (ODR)
-    * 
-    * @param imuRateDivisor The accelerometer/gyroscope ODR divisor
-    * 
-    * Internal ODR is 1125Hz, which is the rate the register gets an update. 
-    * Set divisor to lower this: Effective ODR = ODR / (1 + rate_divisor)
-     */
-    void setIMUUpdateRate(unsigned int imuRateDivisor);
-
     /**
     * @brief Sets the accelerometer and gyroscope bias
     * 
@@ -426,15 +404,13 @@ public:
 private:
     //---------- Initialization ------------
     //Adafruit sensors
-    Adafruit_ICM20649 imu_;
+    ICM20649 imu_;
     Adafruit_LIS2MDL mag_;
     Adafruit_BMP3XX alt_;
     Adafruit_GPS gps_; 
 
     //Adafruit sensorEvents
-    sensors_event_t last_imu_accel_meas;
-    sensors_event_t last_imu_gyro_meas; 
-    sensors_event_t last_imu_temp_meas;
+    std::array<float,6> last_raw_imu_meas;
     sensors_event_t last_mag_meas;
     float last_alt_meas;
     std::array<double,5> last_gps_meas;
@@ -478,14 +454,7 @@ private:
     bool gpsFix_ = false; 
     bool gpsFlag_ = true; // Assume we are running gps
 
-    //------------- Current Measurements ----------------
-    //Used to get referenceECEFPosition, but not used afterwards.
-    //Store measurements from sensors, will always be overwritten.
-    std::array<float,6> currIMUMeas_; // m/s^2 and rad/s
-    std::array<float,3> currMagMeas_; // Unitless / Guass
-    float currAltMeas_; // m
     std::array<double,5> currGPSMeas_; //m, m/s
-
 
 
 };

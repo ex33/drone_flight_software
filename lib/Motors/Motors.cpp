@@ -107,11 +107,11 @@ void Motors::commandControl(const std::array<float,4>& u_Requested) {
     }
 
     // //Command Motors. Have the if statement down here for regression testing, such that currM#PWMInt_ still updates without commadning motors
-    // if (this->armed_) {
-    //   this->writeESC(this->currMotorPWM_);
-    // } else {
-    //   Serial.println("NOT ARMED!!!");
-    // }
+    if (this->armed_) {
+      this->writeESC(this->currMotorPWM_);
+    } else {
+      Serial.println("NOT ARMED!!!");
+    }
 };
 
 void Motors::commandMotors(const int PWM, const uint32_t durationMillis,  const int idx) {

@@ -30,16 +30,16 @@ struct imuData {
 
 struct tiltData {
   uint32_t now; // Time elasped in seconds
-  uint8_t tiltUsed; 
   float orientingVector_x, orientingVector_y, orientingVector_z; //tilt
   float nis_x, nis_y, nis_z;
 
   // Default constructor
-  tiltData() : now(0), tiltUsed(0), orientingVector_x(0), orientingVector_y(0), orientingVector_z(0), nis_x(0), nis_y(0), nis_z(0) {}
+  tiltData() : now(0),  orientingVector_x(0), orientingVector_y(0), orientingVector_z(0), nis_x(0), nis_y(0), nis_z(0) {}
 
+  //Alternative constructor for main loop. Should always default with a time tag. If there was no tilt used, will just log 0 for everything.
+  tiltData(uint32_t t) : now(t),  orientingVector_x(0), orientingVector_y(0), orientingVector_z(0), nis_x(0), nis_y(0), nis_z(0) {}
 
   void setData(const std::array<float,3>& orientingVectorUsed, const std::array<float,3>& NIS){
-  this->tiltUsed = 1; 
   this->orientingVector_x = orientingVectorUsed[0];
   this->orientingVector_y = orientingVectorUsed[1];
   this->orientingVector_z = orientingVectorUsed[2];
@@ -58,21 +58,23 @@ struct tiltData {
 struct magData {
   uint32_t now; // now elasped in seconds
   float mx, my, mz; //Processed Magnetometer
-  float orientingVector_x, orientingVector_y, orientingVector_z; //yaw
   float nis_x, nis_y, nis_z;
 
   // Default constructor
-  magData() : now(0), mx(0), my(0), mz(0), orientingVector_x(0), orientingVector_y(0), orientingVector_z(0), nis_x(0), nis_y(0), nis_z(0) {}
+  magData() : now(0), mx(0), my(0), mz(0), nis_x(0), nis_y(0), nis_z(0) {}
+
+  //Alternative constructor for main loop. Should always default with a time tag. If there was no tilt used, will just log 0 for everything.
+  magData(uint32_t t) : now(t),  mx(0), my(0), mz(0), nis_x(0), nis_y(0), nis_z(0) {} //used to testing things
 
 
+  magData(const uint32_t t, const std::array<float,3>& magMeas, const std::array<float,3>& NIS):
+  now(t), mx(magMeas[0]), my(magMeas[1]), mz(magMeas[2]), nis_x(NIS[0]), nis_y(NIS[1]), nis_z(NIS[2]) 
+  {}
 
-  void setData(const std::array<float,3>& magMeas, const std::array<float,3>& orientingVectorUsed, const std::array<float,3>& NIS) {
+  void setData(const std::array<float,3>& magMeas,  const std::array<float,3>& NIS) {
     this->mx = magMeas[0];
     this->my = magMeas[1];
     this->mz = magMeas[2];
-    this->orientingVector_x = orientingVectorUsed[0];
-    this->orientingVector_y = orientingVectorUsed[1];
-    this->orientingVector_z = orientingVectorUsed[2];
     this->nis_x = NIS[0];
     this->nis_y = NIS[1];
     this->nis_z = NIS[2];
@@ -93,6 +95,7 @@ struct altData {
   float nis;
   // Default constructor
   altData() : now(0),pressure(0) , height(0), nis(0) {}
+  altData(const uint32_t t, const float p, const float h, const float NIS) : now(t),pressure(p) , height(h), nis(NIS) {}
 
   void setPressureData(const float& p) {
     this->pressure = p;
@@ -243,7 +246,7 @@ struct eskfCovarianceData {
 struct controlData {
   uint32_t now; // now elasped in seconds
   float Ft, Mx, My, Mz; //Control Inputs (Th
-  int PWM1, PWM2, PWM3, PWM4;
+  uint16_t PWM1, PWM2, PWM3, PWM4;
   // Default constructor
   controlData() : now(0), Ft(0), Mx(0), My(0), Mz(0), PWM1(0), PWM2(0), PWM3(0), PWM4(0) {};
 

@@ -14,7 +14,7 @@ gps_(&serialGPS) //Initializer list, initializes at same time as sensor object
 
 void Sensors::startUpSensors() {
     //Given default I2C address and I2C bus, check if initilized properly
-    if (!this->imu_.begin_I2C()) { 
+    if (!this->imu_.begin()) { 
         Serial.println("IMU not found at default address... float check wiring");
         while (1) { //Eventually replace with error
         delay(10); //Infinite loop catches IMU not initized 
@@ -84,9 +84,7 @@ void Sensors :: setUpSensors(std::array<float,3> magHardIronArray, std::array<fl
     Rotation rotBody2Mag (rotBody2MagArray);
 
     // ---Set up IMU ----
-    Serial.println("Setting up IMU");
-    this->setIMUDataRange(icm20649_accel_range_t::ICM20649_ACCEL_RANGE_16_G, icm20649_gyro_range_t::ICM20649_GYRO_RANGE_2000_DPS);
-    this->setIMUUpdateRate(0); //1.1kHz
+    Serial.println("Setting up IMU"); // All set up moved into imu.begin()
     this->rotBody2IMU_ = rotBody2IMU;
   
     // --- Set up Magnetometer  ---
@@ -365,20 +363,6 @@ bool Sensors::finalArmingCheck() {
 
 
 // -------------------------- IMU Functions ------------------------------
-void Sensors::setIMUDataRange(icm20649_accel_range_t accelRange,icm20649_gyro_range_t gyroRange) {
-    this -> imu_.setAccelRange(accelRange);
-    this -> imu_.setGyroRange(gyroRange);
-};
-
-void Sensors::setIMUUpdateRate(unsigned int imuRateDivisor) {
-    // Set up Internal Output data rate (this differs from the 400kHz communication speed. ODR is when the register gets a new value)
-    // Gyro ODR is 1125Hz, Accelerometer is 1125Hz. Make them both run at ~100Hz.
-    // Gyro and Accelerometer has two modes for ODR, the one with a lower ODR typically has less bandwidth and more filtering, while the higher one trades off higher bandwidth for little filtering and more noise (for faster dynamics)
-    // Formula is.. Effective ODR = ODR / (1 + rate_divisor)
-    this -> imu_.setAccelRateDivisor(imuRateDivisor);
-    this -> imu_.setGyroRateDivisor(imuRateDivisor);
-}
-
 void Sensors::setIMUCalibration(std::array<float,6>& imuData, int numIMUMeas) {
 
     //Get Bias
@@ -415,26 +399,16 @@ bool Sensors::imuUpdate(uint32_t now) {
     if (now - lastIMU_ >= this->freqIMU_) {
         lastIMU_ = now;
 
-        imu_.getEvent(&last_imu_accel_meas,
-                      &last_imu_gyro_meas,
-                      &last_imu_temp_meas);
+        this->last_raw_imu_meas = this->imu_.readIMU();
         return true;
     }
 
     return false;
 }
 
-
 //This gets the RAW IMU Measurements
 std::array<float,6> Sensors::getIMUMeas(){
-    return std::array<float,6> {
-        this->last_imu_accel_meas.acceleration.x,
-        this->last_imu_accel_meas.acceleration.y,
-        this->last_imu_accel_meas.acceleration.z,
-        this->last_imu_gyro_meas.gyro.x,
-        this->last_imu_gyro_meas.gyro.y,
-        this->last_imu_gyro_meas.gyro.z
-    };
+    return last_raw_imu_meas;
 };
 
 std::array<float,6> Sensors::processIMUMeas(std::array<float,6> imuMeas) {

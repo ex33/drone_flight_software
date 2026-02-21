@@ -113,7 +113,7 @@ inline constexpr float sig_gps_vel(0.1f);
 inline constexpr bool nis_gating_flag (false);
 
 // ========================= Controller =========================
-inline constexpr float controlFrequency {500}; // Hz
+inline constexpr float controlFrequency {500.0f}; // Hz
 inline constexpr std::array<float,3> pRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,3> vRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,4> qRef {1.0f, 0.0f, 0.0f, 0.0f};
@@ -121,23 +121,17 @@ inline constexpr std::array<float,3> wRef {0.0f, 0.0f, 0.0f};
 inline constexpr std::array<float,4> uRef {8.14f, 0.0f, 0.0f, 0.0f}; //[Ft, Mx, My. Mz]. Ft is the THRUST magnitude.
 // Gains for u = Ft Mx My Mz
 // Everywhere there is a 0 has a magntitude of <1e-13.
-inline constexpr std::array<float,48> K {0.0f , 0.0f, -9.235291726374717f , 0.0f, 0.0f, -26.459385705162603f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                                         0.0f, 0.063349178891246 , 0.0f, 0.0f, 0.216910884742852, 0.0f, 2.292320283163765, 0.0f, 0.0f, 0.300548926668002f, 0.0f, 0.0f,
-                                        -0.082236680485872f, 0.0f, 0.0f, -0.281605587634183f, 0.0f, 0.0f, 0.0f, 2.977310240689001 , 0.0f, 0.0f, 0.390567835752289f, 0.0f, 
-                                         0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.308247131137511f, 0.0f, 0.0f, 0.311508647946585f};
+// inline constexpr std::array<float,48> K {0.0f , 0.0f, -9.235291726374717f , 0.0f, 0.0f, -26.459385705162603f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+//                                          0.0f, 0.063349178891246 , 0.0f, 0.0f, 0.216910884742852, 0.0f, 2.292320283163765, 0.0f, 0.0f, 0.300548926668002f, 0.0f, 0.0f,
+//                                         -0.082236680485872f, 0.0f, 0.0f, -0.281605587634183f, 0.0f, 0.0f, 0.0f, 2.977310240689001 , 0.0f, 0.0f, 0.390567835752289f, 0.0f, 
+//                                          0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.308247131137511f, 0.0f, 0.0f, 0.311508647946585f};
 
-// inline constexpr std::array<float,48> K {
-//    -0.0000,   -0.0000,   -1.0951,   -0.0000,    0.0000,   -3.3836,    0.0000,    0.0000    ,0.0000 ,   0.0000 ,   0.0000,    0.0000,
-//    -0.0000,    0.0257,    0.0000,   -0.0000,    0.0883,    0.0000 ,   0.9551,    -0.0000  , -0.0000 ,   0.1288,    0.0000,   -0.0000,
-//    -0.0273,   -0.0000,   -0.0000,   -0.0941,    0.0000,   -0.0000 ,   0.0000,     1.0267 ,   0.0000,    0.0000,    0.1400,    0.0000,
-//    -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,   -0.0000 ,  -0.0000,    0.0000 ,   0.1289 ,  -0.0000,    0.0000,    0.1317};
 
-// inline constexpr std::array<float,48> K {
-//     0.0000,    0.0000,   -9.2353,    0.0000,    0.0000,  -26.4594,    0.0000,     0.0000,    0.0000,    0.0000,    0.0000,   -0.0000,
-//    -0.0000,    0.0311,   -0.0000,   -0.0000,    0.0982,   -0.0000,    0.5894,    0.0000,   -0.0000,    0.0448,    0.0000,   -0.0000,
-//    -0.0314,    0.0000,    0.0000,   -0.0999,    0.0000,    0.0000,    0.0000,    0.6465,   -0.0000,    0.0000,    0.0532,   -0.0000,
-//    -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,    0.0000,   -0.0000,    0.0000,    0.0147,   -0.0000,    0.0000,    0.0171};
-
+inline constexpr std::array<float,48> K {
+   -0.0000,   -0.0000,   -1.0951,   -0.0000,    0.0000,   -3.3836,    0.0000,    0.0000    ,0.0000 ,   0.0000 ,   0.0000,    0.0000,
+   -0.0000,    0.0257,    0.0000,   -0.0000,    0.0883,    0.0000 ,   0.9551,    -0.0000  , -0.0000 ,   0.1288,    0.0000,   -0.0000,
+   -0.0273,   -0.0000,   -0.0000,   -0.0941,    0.0000,   -0.0000 ,   0.0000,     1.0267 ,   0.0000,    0.0000,    0.1400,    0.0000,
+   -0.0000,    0.0000,   -0.0000,   -0.0000,   -0.0000,   -0.0000 ,  -0.0000,    0.0000 ,   0.1289 ,  -0.0000,    0.0000,    0.1317};
 
 
 
@@ -173,7 +167,9 @@ inline constexpr float logAltDataFrequency {25}; //Hz. Logs every Altmeter sampl
 inline constexpr float logGPSDataFrequency {1}; //Hz. Logs every GPS sample
 inline constexpr float logGNCDataFrequency {100}; //Hz.  Logs State AND Controller AND Motor information every 250 times in 1 second.
 
-inline constexpr float logFlushFrequency {10}; //Hz. This is the rate in which Data are written to the file and flushed
+
+inline constexpr float logWriteFrequency {10}; //Hz. This is the rate in which Data are written to the file. Can be different from flush frequency, which is how often we flush the data to the file. If there is a crash, we will lose data that is in the buffer but not yet written to the file, but data that is written but not flushed should still be there. So higher write frequency means more data saved if crash, but also more wear on SD card and more CPU usage.
+inline constexpr float logFlushFrequency {0.2}; //Hz. This is the rate files are flushed
 
 
 // Setup Functions
@@ -315,28 +311,28 @@ void SETUP_Find_Motor_Directions(Motors& motors) {
   delay(2000);
   // Observe the Spin Direction of motors and make sure they are right
   Serial.println("Starting Motor 1 Minimum PWM");
-  motors.commandMotors(SETUP::M1StartPWM, 2000, 1);
+  motors.commandMotors(SETUP::M1StartPWM, 2000, 0);
   Serial.println("Starting Motor 1 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 1);
+  motors.commandMotors(SETUP::minPWM, 2000, 0);
 
   // Find the off-set needed after calibration
   Serial.println("Starting Motor 2 Minimum PWM");
-  motors.commandMotors(SETUP::M2StartPWM, 2000, 2);
+  motors.commandMotors(SETUP::M2StartPWM, 2000, 1);
   Serial.println("Starting Motor 2 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 2);
+  motors.commandMotors(SETUP::minPWM, 2000, 1);
 
 
   // Find the off-set needed after calibration
   Serial.println("Starting Motor 3 Minimum PWM");
-  motors.commandMotors(SETUP::M3StartPWM, 2000, 3);
+  motors.commandMotors(SETUP::M3StartPWM, 2000, 2);
   Serial.println("Starting Motor 3 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 3);
+  motors.commandMotors(SETUP::minPWM, 2000, 2);
 
   // 
   Serial.println("Starting Motor 4 Minimum PWM");
-  motors.commandMotors(SETUP::M3StartPWM, 2000, 4);
+  motors.commandMotors(SETUP::M4StartPWM, 2000, 3);
   Serial.println("Starting Motor 4 Low");
-  motors.commandMotors(SETUP::minPWM, 2000, 4);
+  motors.commandMotors(SETUP::minPWM, 2000, 3);
 
   Serial.println("Done");
   while(1) {};

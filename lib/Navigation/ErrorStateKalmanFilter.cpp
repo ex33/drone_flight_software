@@ -180,26 +180,29 @@ void ErrorStateKalmanFilter::predictRegressionTest(const std::array<float,6> imu
 
 // See Marley EKF Paper for Nonspinning Guided Missles. If all measurements are uncorrelated (which is the assumption here, the R matrix is diagonal for everything)
 // Then the measurements can be processed one at a time with identical results to processing them all at once. Reduces computational speed since there isn't a need for matrix inversion
-tiltData ErrorStateKalmanFilter::updateTiltMeas(const std::array<float,3> accelMeas) {
-    // Calculate Tilt
+void ErrorStateKalmanFilter::updateTiltMeas(const std::array<float,3> accelMeas) {
 
-    tiltData tiltSample; //Initialize bool to be false
     //Decide if we have low enough acceleration to use the accelerometer as a tilt sensor
     Vector3f accelMeasVec(accelMeas);
     if (std::fabs( (accelMeasVec).getMag() - CONSTANTS::g0)<0.5) { //Raw Accelerometer measurement should be measuring -g in NED / body frame if we don't have acceleration. Threshold is only twice that of the noise ceiling. May need a low pas filter 
         std::array<float,9> K; //Kalman Gain
         std::array<float,9> P_row; //Row of Covariance for this update
         
-        if (!this->updateFlag) {
-            updateFlag = true; //Keeps track of whether this is the first update of the loop
+        if (!this->updateFlag_) {
+            updateFlag_ = true; //Keeps track of whether this is the first update of the loop
+        }
+
+        if (!this->tiltFlag_) {
+           this->tiltFlag_ = true; //Keeps track of whether a tilt has been used or not. Will reset on injection of error
         }
 
         //Start Processing 
         // 0. Store relevant variable 
         float sigTilt2 = this->sigTilt_ * this->sigTilt_; 
 
-        // Normalize measurement such that it is a unit vector
-        Vector3f measOrientation = accelMeasVec; //Note that this is the TILT vector
+        // Save down measurement
+        this->tiltMeas_ = accelMeasVec;
+       
 
         // 1. Create Observation Matrix H and observation model h(x). Suppose to be...
         // H = [zeros(3,6), skew(q2R(q_k)*[0;0;1]), eye(3), zeros(3,6)]
@@ -209,32 +212,29 @@ tiltData ErrorStateKalmanFilter::updateTiltMeas(const std::array<float,3> accelM
 
         // 2. Sequentially update each component
         // Update Row 1: H1 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2]}; 
-        this->scalarMagTiltUpdate(skew_RVec[0], skew_RVec[1], skew_RVec[2], measOrientation[0], hx[0],sigTilt2, this->nisTilt[0], this->P_k, this->del_xk, K, P_row);
+        this->scalarMagTiltUpdate(skew_RVec[0], skew_RVec[1], skew_RVec[2], this->tiltMeas_[0], hx[0],sigTilt2, this->nisTilt_[0], this->P_k, this->del_xk, K, P_row);
 
         // Update Row 2: H2 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2] }; 
-        this->scalarMagTiltUpdate( skew_RVec[3], skew_RVec[4], skew_RVec[5], measOrientation[1], hx[1],sigTilt2, this->nisTilt[1], this->P_k, this->del_xk, K, P_row);
+        this->scalarMagTiltUpdate( skew_RVec[3], skew_RVec[4], skew_RVec[5], this->tiltMeas_[1], hx[1],sigTilt2, this->nisTilt_[1], this->P_k, this->del_xk, K, P_row);
 
         // Update Row 3: H3 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2]}; 
-        this->scalarMagTiltUpdate( skew_RVec[6], skew_RVec[7], skew_RVec[8], measOrientation[2], hx[2],sigTilt2, this->nisTilt[2], this->P_k, this->del_xk, K, P_row);
+        this->scalarMagTiltUpdate( skew_RVec[6], skew_RVec[7], skew_RVec[8], this->tiltMeas_[2], hx[2],sigTilt2, this->nisTilt_[2], this->P_k, this->del_xk, K, P_row);
 
-        //Update Data
-        tiltSample.setData(measOrientation.getArray(), this->nisTilt); //Will update flag to let us know tilt sample was used
     }
-    return tiltSample;
+
 
 }
 
 
-magData ErrorStateKalmanFilter::updateMagMeas(const std::array<float,3> magMeas) {
-    magData magSample;
+void ErrorStateKalmanFilter::updateMagMeas(const std::array<float,3> magMeas) {
 
     Vector3f magMeasVec(magMeas);
  
     std::array<float,9> K; //Kalman Gain
     std::array<float,9> P_row; //Row of Covariance for this update
     
-    if (!this->updateFlag) {
-        updateFlag = true; //Keeps track of whether this is the first update of the loop
+    if (!this->updateFlag_) {
+        updateFlag_ = true; //Keeps track of whether this is the first update of the loop
     }
 
     //Start Processing 
@@ -253,27 +253,23 @@ magData ErrorStateKalmanFilter::updateMagMeas(const std::array<float,3> magMeas)
 
     // 2. Sequentially update each component
     // Update Row 1: H1 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[0], skew_RVec[1], skew_RVec[2],}; 
-    this->scalarMagTiltUpdate(skew_RVec[0], skew_RVec[1], skew_RVec[2], measOrientation[0], hx[0],sigMag2, this->nisMag[0], this->P_k, this->del_xk, K, P_row);
+    this->scalarMagTiltUpdate(skew_RVec[0], skew_RVec[1], skew_RVec[2], measOrientation[0], hx[0],sigMag2, this->nisMag_[0], this->P_k, this->del_xk, K, P_row);
 
     // Update Row 2: H2 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[3], skew_RVec[4], skew_RVec[5]}; 
-    this->scalarMagTiltUpdate(skew_RVec[3], skew_RVec[4], skew_RVec[5], measOrientation[1], hx[1],sigMag2, this->nisMag[1], this->P_k, this->del_xk, K, P_row);
+    this->scalarMagTiltUpdate(skew_RVec[3], skew_RVec[4], skew_RVec[5], measOrientation[1], hx[1],sigMag2, this->nisMag_[1], this->P_k, this->del_xk, K, P_row);
 
     // Update Row 3: H3 {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, skew_RVec[6], skew_RVec[7], skew_RVec[8]}; 
-    this->scalarMagTiltUpdate(skew_RVec[6], skew_RVec[7], skew_RVec[8], measOrientation[2], hx[2],sigMag2, this->nisMag[2], this->P_k, this->del_xk, K, P_row);
+    this->scalarMagTiltUpdate(skew_RVec[6], skew_RVec[7], skew_RVec[8], measOrientation[2], hx[2],sigMag2, this->nisMag_[2], this->P_k, this->del_xk, K, P_row);
 
-    magSample.setData(magMeas, measOrientation.getArray(), this->nisMag);
-
-    return magSample;
 };
 
-altData ErrorStateKalmanFilter::updateAltMeas(const float altMeas) {
-    altData altSample; 
+void ErrorStateKalmanFilter::updateAltMeas(const float altMeas) {
 
     std::array<float,9> K; //Kalman Gain
     std::array<float,9> P_row; //Row of Covariance for this update
     
-    if (!this->updateFlag) {
-        updateFlag = true; //Keeps track of whether this is the first update of the loop
+    if (!this->updateFlag_) {
+        updateFlag_ = true; //Keeps track of whether this is the first update of the loop
     }
 
     //Start Processing 
@@ -282,21 +278,18 @@ altData ErrorStateKalmanFilter::updateAltMeas(const float altMeas) {
 
     // 1. Update Down Position
     // H = [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] --> Paritions the third row / col --> idx = 2
-    this->scalarGPSAltUpdate( 2, -altMeas, this->p_k[2], sigAlt2, this->nisAlt, this->P_k, this->del_xk, K, P_row);  //Negative alt meas for DOWN 
+    this->scalarGPSAltUpdate( 2, -altMeas, this->p_k[2], sigAlt2, this->nisAlt_, this->P_k, this->del_xk, K, P_row);  //Negative alt meas for DOWN 
 
-
-    altSample.setData(altMeas, this->nisAlt);
-    return altSample;
 }
 
-gpsData ErrorStateKalmanFilter::updateGPSMeas(const std::array<float,4> gpsMeas) {
-    gpsData gpsSample;
+void ErrorStateKalmanFilter::updateGPSMeas(const std::array<float,4> gpsMeas) {
+
 
     std::array<float,9> K; //Kalman Gain
     std::array<float,9> P_row; //Row of Covariance for this update
     
-    if (!this->updateFlag) {
-        updateFlag = true; //Keeps track of whether this is the first update of the loop
+    if (!this->updateFlag_) {
+        updateFlag_ = true; //Keeps track of whether this is the first update of the loop
     }
 
     //Start Processing 
@@ -306,24 +299,20 @@ gpsData ErrorStateKalmanFilter::updateGPSMeas(const std::array<float,4> gpsMeas)
 
     // 1. Update North Position
     // H = [1,0,0,0,0,0,0,0,0] --> Paritions the first row / col --> idx = 0
-    this->scalarGPSAltUpdate( 0, gpsMeas[0], this->p_k[0], sigGPSPos2, this->nisGPS[0],  this->P_k, this->del_xk, K, P_row); // Update 
+    this->scalarGPSAltUpdate( 0, gpsMeas[0], this->p_k[0], sigGPSPos2, this->nisGPS_[0],  this->P_k, this->del_xk, K, P_row); // Update 
 
     // 2. Update East Position
     // H = [0,1,0,0,0,0,0,0,0] --> Paritions the second row / col --> idx = 1
-    this->scalarGPSAltUpdate( 1, gpsMeas[1], this->p_k[1], sigGPSPos2, this->nisGPS[1],  this->P_k, this->del_xk, K, P_row); // Update 
+    this->scalarGPSAltUpdate( 1, gpsMeas[1], this->p_k[1], sigGPSPos2, this->nisGPS_[1],  this->P_k, this->del_xk, K, P_row); // Update 
 
     // 3. Update North Velocity
     // H = [0,0,0,1,0,0,0,0,0] --> Paritions the fourth row / col --> idx = 3
-    this->scalarGPSAltUpdate( 3, gpsMeas[2], this->v_k[0], sigGPSVel2, this->nisGPS[2], this->P_k, this->del_xk, K, P_row);  
+    this->scalarGPSAltUpdate( 3, gpsMeas[2], this->v_k[0], sigGPSVel2, this->nisGPS_[2], this->P_k, this->del_xk, K, P_row);  
 
     // 4. Update East Velocity
     // H = [0,0,0,0,1,0,0,0,0] --> Paritions the fifth row / col --> idx = 4
-    this->scalarGPSAltUpdate( 4, gpsMeas[3], this->v_k[1], sigGPSVel2, this->nisGPS[3], this->P_k, this->del_xk, K, P_row); 
+    this->scalarGPSAltUpdate( 4, gpsMeas[3], this->v_k[1], sigGPSVel2, this->nisGPS_[3], this->P_k, this->del_xk, K, P_row); 
 
-    //Implement once tested
-    gpsSample.setData(gpsMeas, this->nisGPS);
-
-    return gpsSample;
 }
 
 void ErrorStateKalmanFilter::setMagRef(Vector3f magRef) {
